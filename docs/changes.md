@@ -9,7 +9,7 @@
 | 全部 Test 数据、不再生成需求 | data/*.csv、common/data.py、data/source_manifest.json |
 | 容量6、编组4、间隔5—15、参考满载率0.8 | stage1/params.py、stage2/params.py |
 | 实际剩余座位、参考车队复用与成本 | stage1/capacity.py、stage1/reference.py、common/roads.py |
-| 普通乘客基线验证，最多15套代表、不补数 | stage1/verification.py、stage1/selection.py、stage1/nsga2.py |
+| 普通乘客基线验证，最多20套代表、不补数 | stage1/verification.py、stage1/selection.py、stage1/nsga2.py |
 | 统一运营成本与分钟制乘客目标 | stage2/obj.py、stage2/incremental.py、stage2/joint.py |
 | 实体模块联合分配、库存及空驶计费 | stage2/joint.py、stage2/resources.py、stage2/constraints.py |
 | 返站、独立续行、回库与继续DRT，兼容原表示 | stage2/routing.py、stage2/insertion.py、stage2/initialization.py |

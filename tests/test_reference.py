@@ -167,10 +167,10 @@ class ReferenceTests(unittest.TestCase):
         p = self.parameters()
         self.assertTrue(all((all((x == 10 for x in v)) for v in profiles(n, p).values())))
 
-    def test_crowding_retains_fifteen_and_extremes(self):
+    def test_crowding_retains_twenty_and_extremes(self):
         candidates = [{'timetable': {'A': [0, i, 120]}, 'objectives': (i, 40 - i)} for i in range(40)]
         selected, stats = select_candidates(candidates)
-        self.assertEqual(len(selected), 15)
+        self.assertEqual(len(selected), 20)
         self.assertEqual(selected[0]['objectives'], (0, 40))
         self.assertEqual(selected[-1]['objectives'], (39, 1))
 

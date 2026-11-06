@@ -27,7 +27,7 @@ class SettingsTests(unittest.TestCase):
             self.assertAlmostEqual(p.stop_time, 20 / 60)
             self.assertAlmostEqual(p.operation_time, 30 / 60)
         self.assertEqual(p1.reference_load, .8)
-        self.assertEqual(p1.candidates, 15)
+        self.assertEqual(p1.candidates, 20)
         self.assertEqual(p2.max_coupling_wait, 10)
         self.assertEqual((p2.learning_rate, p2.exploration, p2.dominance_reward, p2.hv_margin), (.1, .05, .3, .1))
         self.assertEqual(len(ACTIONS), 13)

@@ -23,7 +23,7 @@ class Params:
     turnaround_time: float = 1.0
     stop_time: float = 20 / 60
     operation_time: float = 30 / 60
-    candidates: int = 15
+    candidates: int = 20
     guided_fraction: float = 0.5
     demand_bin: float = 5
     conditional_operations: bool = True

@@ -1,7 +1,7 @@
 from common.multiobjective import layers2d
 from common.pareto import crowding
 
-def select_candidates(candidates, limit=15, p=None, rng=None):
+def select_candidates(candidates, limit=20, p=None, rng=None):
     layers = layers2d([c['objectives'] for c in candidates])
     front = [candidates[i] for i in layers[0]] if layers else []
     kept = list(range(len(front)))
