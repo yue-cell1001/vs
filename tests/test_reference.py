@@ -19,7 +19,7 @@ class ReferenceTests(unittest.TestCase):
     def table(self, n):
         return {line: [0, 5, 10, 15] for line in n.lines}
 
-    @unittest.skipUnless(all((Path(__file__).resolve().parents[1] / "data" / name).is_file() for name in ("nodes_with_drt.csv", "lines.csv", "edges.csv", "passengers.csv")), "Private Test dataset is not published; provide local CSV files to run this integration check")
+    @unittest.skipUnless(all((Path(__file__).resolve().parents[1] / "data" / name).is_file() for name in ("nodes_with_drt.csv", "lines.csv", "edges.csv", "passengers.csv")), "Data files are missing")
     def test_new_data_schema(self):
         net = load_network('data')
         self.assertEqual(sum((not p.kind for p in net.passengers)), 3000)
@@ -27,7 +27,7 @@ class ReferenceTests(unittest.TestCase):
         self.assertEqual(len(net.transfer_candidates), 0)
         self.assertEqual(net.line_families['6_up'], net.line_families['6_down'])
 
-    @unittest.skipUnless(all((Path(__file__).resolve().parents[1] / "data" / name).is_file() for name in ("nodes_with_drt.csv", "lines.csv", "edges.csv", "passengers.csv")), "Private Test dataset is not published; provide local CSV files to run this integration check")
+    @unittest.skipUnless(all((Path(__file__).resolve().parents[1] / "data" / name).is_file() for name in ("nodes_with_drt.csv", "lines.csv", "edges.csv", "passengers.csv")), "Data files are missing")
     def test_full_input_reference_coverage(self):
         n = load_network('data')
         p = Params()
@@ -94,7 +94,7 @@ class ReferenceTests(unittest.TestCase):
         self.assertFalse(r.uncovered)
         self.assertEqual(r.objectives[1], 30)
 
-    @unittest.skipUnless(all((Path(__file__).resolve().parents[1] / "data" / name).is_file() for name in ("nodes_with_drt.csv", "lines.csv", "edges.csv", "passengers.csv")), "Private Test dataset is not published; provide local CSV files to run this integration check")
+    @unittest.skipUnless(all((Path(__file__).resolve().parents[1] / "data" / name).is_file() for name in ("nodes_with_drt.csv", "lines.csv", "edges.csv", "passengers.csv")), "Data files are missing")
     def test_capacity_four_real_repair_and_second_stage_baseline(self):
         from stage1.verification import verify
         n = load_network('data')

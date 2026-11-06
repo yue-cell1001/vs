@@ -1,8 +1,3 @@
-"""Construct complete DRT route seeds before joint passenger/module optimization.
-
-The geometric costs here rank initial insertions only. Accepted seeds are always
-re-evaluated by the full integer allocation and independent hard-constraint audit.
-"""
 from dataclasses import replace
 from math import inf
 from common.model import Excursion
@@ -51,7 +46,7 @@ def construct(decoder,rule,rng,progress=print,initial=(),pending=None):
         check(decoder)
         candidates=[]
         for pos,e in enumerate(plan):
-            if not e.events: continue  # Preserve empty support duties without converting their line
+            if not e.events: continue
             trip=trips[e.split_trip]; origin=trip.visits[e.split]
             old=evaluate(e,origin)
             for a in range(len(e.events)+1):

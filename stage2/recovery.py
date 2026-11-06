@@ -1,8 +1,3 @@
-"""Construct alternative initial paths using existing empty cross-line modules.
-
-Scheduled-cut deficits identify relief directions, not full-model infeasibility.
-All resulting decisions must pass the normal joint allocation and full audit.
-"""
 import math
 from common.model import Excursion
 
@@ -21,12 +16,12 @@ def fixed_cuts(net,table,p):
 
 
 def relief(decoder,plan,cuts,strategy="capacity_aware"):
-    """Try empty cross-line backup services, never inventing warehouse modules."""
+
     if strategy not in ("capacity_aware","late_departure","legacy_late_departure"):
         raise ValueError("Unknown relief strategy")
     context=decoder.context(plan);result=list(plan)
     used={e.source for e in plan}
-    # Do not obtain relief by stripping needed seats from the donor direction.
+
     from collections import Counter
     remaining=Counter();demand=Counter()
     for duty in context.duties.values():
@@ -45,11 +40,11 @@ def relief(decoder,plan,cuts,strategy="capacity_aware"):
             for i,v in enumerate(duty.visits[:-1]):
                 if strategy=="legacy_late_departure" and any(e.split_trip==v.trip for e in plan):continue
                 if v.line==line or v.node not in decoder.net.depots or v.node in decoder.net.lines[line]:continue
-                # A new dwell after another module has already split cannot delay it.
+
                 if (v.trip,v.node) not in context.operations and any(e.split_trip==v.trip and e.split>=i for e in plan):continue
                 path=decoder.optimizer.roads.path(v.node,decoder.net.lines[line][0])
                 if path is not None:options.append((v.departure,key,i,v))
-        # Prefer late service while preserving existing DRT pickup clocks.
+
         for _,key,i,v in sorted(options,key=lambda x:(-x[0],x[1],x[2])):
             if key in used:continue
             removed=Counter((l.line,l.start,l.end) for l in context.duties[key].legs[i:] if l.kind=='fixed')

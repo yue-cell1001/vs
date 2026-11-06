@@ -20,9 +20,9 @@ def validate(solution, net, trips, p, required=None):
         nominal = make_trips(net, solution.metadata['timetable'], p)
         try:
             reconstructed, actions = construct_duties(net, nominal, build_base(net, nominal, p), solution.excursions, p, relaxed=True, with_operations=True)
-            # Derive the operation mask independently, then reconstruct physical
-            # times with its dwell. Nominal times omit actual split/couple work
-            # and can falsely reject a valid independent continuation.
+
+
+
             scheduled = make_trips(net, solution.metadata['timetable'], p, actions)
             reconstructed = construct_duties(net, scheduled, build_base(net, scheduled, p), solution.excursions, p, operation_schedule=actions)
             for key, duty in solution.duties.items():

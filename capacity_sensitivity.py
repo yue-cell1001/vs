@@ -1,4 +1,3 @@
-"""Capacity 4--8 sensitivity study; existing stage-1/stage-2 algorithms are reused."""
 import argparse
 import csv
 import hashlib
@@ -84,7 +83,7 @@ def fingerprint(data):
 
 
 def execute(command, logfile):
-    """Run real repository entrypoints, preserving logs, exit codes and cancellation."""
+
     with Path(logfile).open('a', encoding='utf-8') as log:
         process = subprocess.Popen(command, cwd=PROJECT, stdout=subprocess.PIPE,
                                    stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
@@ -163,7 +162,7 @@ def nondominated_rows(rows):
 
 
 def collect_case(settings, capacity, folder, net, shared_bounds):
-    """Audit actual saved front entries; absence/failure is never an infeasibility proof."""
+
     planned = len(read_json(folder / 'stage1.json', []))
     run = read_json(folder / 'stage2/run.json', {})
     timing = read_json(folder / 'stage2/timing.json', {})
@@ -309,7 +308,7 @@ def draw_fronts(cases, directory):
 
 
 def describe_trend(capacities, values, label, unit):
-    """Describe observed endpoints without imposing the example's U-shaped trend."""
+
     best = min(values)
     winners = [str(q) for q, value in zip(capacities, values) if math.isclose(value, best, rel_tol=1e-9, abs_tol=1e-7)]
     down = [b <= a + 1e-7 for a, b in zip(values, values[1:])]
@@ -434,7 +433,7 @@ def run(settings, data, output, resume=False, report_only=False, executor=execut
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=Path, default=PROJECT / 'data')
     parser.add_argument('--output', type=Path, default=PROJECT / 'results/capacity_sensitivity')
     parser.add_argument('--capacities', type=int, nargs='+', choices=CAPACITIES, default=CAPACITIES)
@@ -445,7 +444,7 @@ def main():
     parser.add_argument('--subproblem-seconds', type=float)
     parser.add_argument('--seed', type=int, default=2026)
     parser.add_argument('--resume', action='store_true')
-    parser.add_argument('--report-only', action='store_true', help='Read the saved design and audit/regenerate its report without solving')
+    parser.add_argument('--report-only', action='store_true', )
     args = parser.parse_args()
     if args.report_only:
         saved = read_json(args.output / 'configuration.json')

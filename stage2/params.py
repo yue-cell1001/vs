@@ -49,13 +49,13 @@ class Params:
 
     @property
     def coupling_discount(self):
-        # Legacy seed scoring uses (1-discount) for following modules.
+
         return 1 - self.following_ratio
 
     @property
     def time_value(self):
-        # Compatibility for the original geometric insertion scores: minutes,
-        # with no monetary conversion in the actual objective.
+
+
         return 1.0
 
     def __post_init__(self):

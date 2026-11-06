@@ -129,7 +129,7 @@ def export_results(directory, data='data', plots=True, progress=print, solution_
         writer = csv.DictWriter(stream, fieldnames=list(points[0]))
         writer.writeheader()
         writer.writerows(points)
-    image = None  # Automatic output contains one directional set per timetable only.
+    image = None
     expected = None
     if (root / 'progress.json').exists():
         expected = json.loads((root / 'progress.json').read_text(encoding='utf-8')).get('total')
@@ -138,7 +138,7 @@ def export_results(directory, data='data', plots=True, progress=print, solution_
     return manifest
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser()
     parser.add_argument('directory')
     parser.add_argument('--data', default='data')
     args = parser.parse_args()

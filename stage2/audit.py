@@ -31,7 +31,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('solution')
     parser.add_argument('--data', default='data')
-    parser.add_argument('--run', help='run.json containing the actual physical parameters')
+    parser.add_argument('--run', )
     args = parser.parse_args()
     run = Path(args.run) if args.run else Path(args.solution).parent / 'run.json'
     p = Params(**json.loads(run.read_text())['parameters'])

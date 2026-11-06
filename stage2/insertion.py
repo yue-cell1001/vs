@@ -1,9 +1,3 @@
-"""Continuous module-chain insertion neighbourhoods.
-
-The default generators have no order-count, source, return or insertion caps.
-Optional explicit budgets exist solely for labelled development experiments.
-All pruning below is physical infeasibility or exact template symmetry.
-"""
 from dataclasses import replace
 from heapq import nsmallest
 from common.model import Excursion
@@ -50,15 +44,15 @@ def endings(decoder,e,allow_depot=True,earlier=()):
             if trip.line==line and net.lines[line].index(v.node)<=position: continue
             if trip.line!=line and v.node not in net.depots: continue
             travel=net.distance(node,v.node)/p.speed*60
-            # A proposed join itself creates a tau dwell. Conditional timing is
-            # recomputed exactly by the context compiler before acceptance.
+
+
             prospective=v.departure+(p.operation_time if (trip.id,v.node) not in context.operations else 0)
             gap=prospective-time-travel-p.operation_time
             if gap<-1e-7: continue
             if v.arrival-time-travel>p.max_coupling_wait+1e-7 and v.node not in net.depots: continue
             choices.append((net.distance(node,v.node)+max(0,gap)*.05,replace(e,target=trip.id,join=j)))
     for _,end in limit(choices,p.join_limit,key=lambda v:v[0]): yield end
-    # Every downstream independent re-entry and every physical depot is eligible.
+
     for j in range(position+1,len(net.lines[line])): yield replace(e,target='',join=j)
     if origin.node in net.depots:
         for other,stops in net.lines.items():
@@ -71,8 +65,8 @@ def endings(decoder,e,allow_depot=True,earlier=()):
 
 def source_options(decoder,person,used=(),limit_count=None,excursions=()):
     context=decoder.context(excursions); choices=[]; signatures=set()
-    # Do not overwrite previous requests. Every existing chain's continuation
-    # after its most recent return remains available for another excursion.
+
+
     last=default_returns(context.duties,excursions)
     for key,duty in context.duties.items():
         for i,v in enumerate(duty.visits[:-1]):
@@ -81,7 +75,7 @@ def source_options(decoder,person,used=(),limit_count=None,excursions=()):
             departure=v.departure+(decoder.p.operation_time if (v.trip,v.node) not in context.operations else 0)
             pickup=max(person.earliest,departure+travel)
             if pickup>person.latest+1e-7: continue
-            # Entire equivalent module histories, not just trip IDs, define symmetry.
+
             signature=(tuple(duty.visits),tuple(duty.legs),i)
             if signature in signatures: continue
             signatures.add(signature)
@@ -111,7 +105,7 @@ def default_returns(duties,excursions):
 
 def proposals(decoder,excursions,pid,cooperative=False):
     p=decoder.p; person=decoder.people[pid]
-    # Insert both events in every existing DRT sequence, without a request-count cap.
+
     for pos,e in enumerate(excursions):
         if e.split_trip=='depot': continue
         if p.pool_limit is not None and len({q for q,_ in e.events})>=p.pool_limit: continue
@@ -132,8 +126,8 @@ def proposals(decoder,excursions,pid,cooperative=False):
 
 
 def estimate(decoder,candidate,pid):
-    # A ranking for explicitly requested development budgets only. Complete mode
-    # never removes candidates by this proxy.
+
+
     affected=[e for e in candidate if any(q==pid for q,_ in e.events)]
     return sum(len(e.events) for e in affected)
 
@@ -145,7 +139,7 @@ def options(decoder,excursions,pid,cooperative=False):
 
 
 def transfer_options(decoder,excursions,person,sources):
-    """All pickup/delivery fragments, including pooling in existing excursions."""
+
     pid=person.id
     def pickups():
         context=decoder.context(excursions)
@@ -170,7 +164,7 @@ def transfer_options(decoder,excursions,person,sources):
         def shared_before(duty,index):
             return any((leg.trip,leg.start,leg.end,round(leg.departure,7)) in trunk
                        for leg in duty.legs[:index] if leg.kind=='fixed')
-        # Add a delivery to an existing pooled excursion.
+
         for pos,e in enumerate(picked):
             if e.source==source or e.split_trip=='depot': continue
             second=context.duties[e.source]
@@ -179,7 +173,7 @@ def transfer_options(decoder,excursions,person,sources):
                 events=e.events[:i]+((pid,False),)+e.events[i:]
                 for end in endings(decoder,replace(e,events=events),earlier=picked[:pos]):
                     yield picked[:pos]+(end,)+picked[pos+1:]
-        # Or detach another module after a physically shared trunk segment.
+
         returns=default_returns(context.duties,picked); equivalent=set()
         for key,second in context.duties.items():
             if key==source: continue

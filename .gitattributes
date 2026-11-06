@@ -1,2 +1,1 @@
-# Preserve uploaded CSV bytes, including UTF-8 BOM and CRLF records.
 data/*.csv -text whitespace=cr-at-eol

@@ -13,7 +13,7 @@ class CatalogueReuseTests(unittest.TestCase):
     def test_shared_od_matches_independent_release_time_catalogues(self):
         net, p, table = scenario(ordinary=1, drt=0)
         person = net.passengers[0]
-        # Include releases on either side of the existing boarding tolerance.
+
         releases = [0, 0, 2, 5, 5 + 0.5e-7, 5 + 2e-7, 12]
         net.passengers = [replace(person, id=i, earliest=t) for i, t in enumerate(releases)]
         trips = make_trips(net, table, p)

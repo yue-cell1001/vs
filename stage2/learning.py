@@ -1,4 +1,3 @@
-"""One linear reward-inaction automaton, with fixed uniform exploration."""
 from copy import deepcopy
 from math import isfinite, isclose
 

@@ -1,9 +1,3 @@
-"""Greedy complete-request repair, followed by joint allocation and full audit.
-
-Geometric insertion scores choose a route; they do not replace the final physical
-objectives or feasibility checks. Exhaustive joint-decoding repair remains an
-explicit alternative. Complex transfer/repeated-chain genomes use that repair.
-"""
 from .initialization import construct
 from .routing import Infeasible
 
@@ -28,7 +22,7 @@ def repair(decoder,partial,pending,rule,rng):
     required={q.id for q in decoder.net.passengers if q.kind}
     errors=[]
     from .recovery import fixed_cuts,relief
-    # Retry route construction, never replace a missing passenger with a penalty.
+
     for strategy_rule in dict.fromkeys((rule,0,1,2)):
         try:
             decisions=construct(decoder,strategy_rule,rng,lambda _:None,initial=partial,pending=set(pending))

@@ -3,7 +3,7 @@ NAMES_DESTROY = ('random', 'related', 'marginal', 'chain', 'timing')
 NAMES_REPAIR = ('operator_cost', 'passenger_cost', 'local_pareto_with_timing')
 
 def remove(excursions,ids,drop_sources=()):
-    """Remove every pickup/delivery fragment, including both sides of a transfer."""
+
     from dataclasses import replace
     ids=set(ids); dropped=set(); backup_ids={}; counts={}
     for i,e in enumerate(excursions):

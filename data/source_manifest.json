@@ -1,0 +1,13 @@
+{
+  "source": "Test.zip",
+  "sha256": {
+    "edges.csv": "fc2988a0256a4f7af38e003030a77d9931fd0d6f6aa916a71639c83b51da6a01",
+    "lines.csv": "e01df3a2c3d772e6ecfbe458a8df0ad556cc27e3ee7feae78e09d3bdd74b31e7",
+    "nodes.csv": "b5c5336458b04b562b93d9081668a44c6da0b46fe0d7acb826919a4a98a30a6a",
+    "nodes_with_drt.csv": "fe321d38b1d4f360744d162de833c8784c19fd964ee3022fada02c2fd3006326",
+    "passenger_provenance.csv": "0e1faebc70732777230b0d30d4408cb9415c2cbbf1a8ca3ca7dc7b76496f779d",
+    "passengers.csv": "3a24ec8a151cc0f7f65f755b82d07c7e219fa760c3dd3cda7b83991ace868d56",
+    "result_arrival_directional.csv": "e9e9e2e2b12127b19db936675c4184397ed85f2d720d1e0e57bd6fa6d7392ef2",
+    "result_od_directional.csv": "d09006cb97eacf4d04324ea1b0850f27cdf937255b334b733ed00c67881be997"
+  }
+}

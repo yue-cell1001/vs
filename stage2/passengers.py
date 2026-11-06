@@ -67,8 +67,8 @@ def catalogue(net, groups, required, p, trips=None, excursions=()):
                 and all(leg.kind == 'fixed' for leg in duty.legs)
                 and not crossings.get(key)):
             scheduled.add(key)
-    # Route feasibility is independent of a cohort's release time. Build the
-    # physical itineraries once per OD, then apply each cohort's time filter.
+
+
     itineraries = {}
     for (line, origin, dest, earliest), people in cohorts.items():
         ids = tuple((x.id for x in people))

@@ -42,7 +42,7 @@ class SettingsTests(unittest.TestCase):
         self.assertFalse(reference.uncovered)
         self.assertEqual(reference.trips['A:0']['formation'], 3)
 
-    @unittest.skipUnless((ROOT / "data/source_manifest.json").is_file(), "Private dataset/manifest not published; this check requires the local data bundle")
+    @unittest.skipUnless((ROOT / "data/source_manifest.json").is_file(), "Data files or source manifest are missing")
     def test_test_zip_data_is_used_without_regeneration(self):
         manifest = json.loads((ROOT / 'data/source_manifest.json').read_text())
         for name, digest in manifest['sha256'].items():
