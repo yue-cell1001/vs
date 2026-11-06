@@ -6,8 +6,8 @@ class Params:
     end: float = 600
     min_headway: float = 5
     max_headway: float = 15
-    population: int = 100
-    generations: int = 300
+    population: int = 64
+    generations: int = 200
     evaluation_budget: int | None = None
     crossover: float = 0.9
     mutation_step: float = 2

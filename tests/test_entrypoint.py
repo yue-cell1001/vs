@@ -15,6 +15,9 @@ class EntryPointTests(unittest.TestCase):
                 run.main()
             self.assertEqual(execute.call_count, 2)
             self.assertIn('stage1.main', execute.call_args_list[0].args[0])
+            command = execute.call_args_list[0].args[0]
+            self.assertEqual(command[command.index('--population') + 1], '64')
+            self.assertEqual(command[command.index('--generations') + 1], '200')
             self.assertIn('stage2.main', execute.call_args_list[1].args[0])
             timing = json.loads((root / 'total_timing.json').read_text())
             self.assertEqual(timing['status'], 'completed')

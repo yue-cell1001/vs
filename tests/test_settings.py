@@ -26,6 +26,7 @@ class SettingsTests(unittest.TestCase):
             self.assertEqual((p.depot_initial, p.depot_capacity), (5, 20))
             self.assertAlmostEqual(p.stop_time, 20 / 60)
             self.assertAlmostEqual(p.operation_time, 30 / 60)
+        self.assertEqual((p1.population, p1.generations), (64, 200))
         self.assertEqual(p1.reference_load, .8)
         self.assertEqual(p1.candidates, 20)
         self.assertEqual(p2.max_coupling_wait, 10)

@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 from time import monotonic
+from stage1.params import Params as Stage1Params
 
 def main():
     parser = argparse.ArgumentParser()
@@ -14,8 +15,8 @@ def main():
     parser.add_argument('--no-reports', action='store_true', )
     parser.add_argument('--no-plot', action='store_true', )
     parser.add_argument('--data', default='data')
-    parser.add_argument('--population', type=int, default=100)
-    parser.add_argument('--generations', type=int, default=300)
+    parser.add_argument('--population', type=int, default=Stage1Params().population)
+    parser.add_argument('--generations', type=int, default=Stage1Params().generations)
     parser.add_argument('--evaluation-budget', type=int, default=0)
     parser.add_argument('--iterations', type=int, default=200)
     parser.add_argument('--subproblem-seconds', type=float)
