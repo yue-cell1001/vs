@@ -6,6 +6,9 @@ import math
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import partial
+from threading import Lock
 from decimal import Decimal
 from pathlib import Path
 from time import perf_counter
@@ -82,11 +85,64 @@ def fingerprint(data):
     return digest.hexdigest()
 
 
-def execute(command, logfile):
+class ProcessGroup:
+    def __init__(self):
+        self.lock = Lock()
+        self.processes = set()
+        self.cancelled = False
 
+    def start(self, *args, **kwargs):
+        with self.lock:
+            if self.cancelled:
+                raise RuntimeError('Capacity comparison cancelled')
+            process = subprocess.Popen(*args, **kwargs)
+            self.processes.add(process)
+            return process
+
+    def finished(self, process):
+        with self.lock:
+            self.processes.discard(process)
+
+    def cancel(self):
+        with self.lock:
+            self.cancelled = True
+            processes = list(self.processes)
+        for process in processes:
+            if process.poll() is None:
+                process.terminate()
+        for process in processes:
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+
+
+def map_cases(function, values, workers, abort):
+    values = list(values)
+    pool = ThreadPoolExecutor(max_workers=workers)
+    futures = []
+    try:
+        futures = [pool.submit(function, value) for value in values]
+        indices = {future: i for i, future in enumerate(futures)}
+        results = [None] * len(futures)
+        for future in as_completed(futures):
+            results[indices[future]] = future.result()
+        return results
+    except BaseException:
+        for future in futures:
+            future.cancel()
+        abort()
+        raise
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+
+
+def execute(command, logfile, process_group=None):
     with Path(logfile).open('a', encoding='utf-8') as log:
-        process = subprocess.Popen(command, cwd=PROJECT, stdout=subprocess.PIPE,
-                                   stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+        start = process_group.start if process_group is not None else subprocess.Popen
+        process = start(command, cwd=PROJECT, stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
         try:
             for line in process.stdout:
                 log.write(line)
@@ -101,6 +157,11 @@ def execute(command, logfile):
                 process.kill()
                 process.wait()
             raise
+        finally:
+            if process.stdout is not None:
+                process.stdout.close()
+            if process_group is not None:
+                process_group.finished(process)
 
 
 def stage1_command(settings, capacity, data, folder):
@@ -130,6 +191,8 @@ def prepare_case(settings, capacity, data, folder, net, executor):
     folder.mkdir(exist_ok=True)
     state = read_json(folder / 'case.json', {})
     if not state.get('stage1_complete'):
+        state.update(capacity=capacity, phase='stage1', status='running')
+        write_json(folder / 'case.json', state)
         print(f'Capacity {capacity}: optimizing its own timetable set', flush=True)
         code = executor(stage1_command(settings, capacity, data, folder), folder / 'stage1.log')
         if code:
@@ -144,8 +207,9 @@ def prepare_case(settings, capacity, data, folder, net, executor):
         errors = violations(item['timetable'], net, settings.stage1(capacity))
         if errors:
             raise ValueError(f'Illegal first-stage timetable: {errors}')
-    state.update(capacity=capacity, stage1_complete=True, planned_timetables=len(tables))
+    state.update(capacity=capacity, stage1_complete=True, planned_timetables=len(tables), phase='stage1_completed', stage1_seconds=first_run['elapsed_seconds'])
     write_json(folder / 'case.json', state)
+    print(f"Capacity {capacity}: stage 1 completed in {first_run['elapsed_seconds']:.2f} seconds; {len(tables)} timetables", flush=True)
     return objective_bounds(net, tables, settings.stage2(capacity))[0]
 
 
@@ -327,9 +391,9 @@ def describe_trend(capacities, values, label, unit):
     return f"已获得前沿的{label}{trend}；最低值{best:.2f}{unit}，对应容量{'、'.join(winners)}人。"
 
 
-def write_report(root, cases, settings, search_bounds):
+def write_report(root, cases, settings, search_bounds, workers=1):
     result = analyze(cases)
-    result.update(settings=canonical(asdict(settings)), search_objective_bounds=search_bounds,
+    result.update(settings=canonical(asdict(settings)), search_objective_bounds=search_bounds, parallel_workers=workers,
                   cost_scaling='purchase=50*capacity/6; per_km=0.3*capacity/6; maximum formation fixed at 4')
     with (root / 'pareto_fronts.csv').open('w', newline='', encoding='utf-8-sig') as stream:
         writer = csv.writer(stream)
@@ -372,7 +436,9 @@ def write_report(root, cases, settings, search_bounds):
     return result
 
 
-def run(settings, data, output, resume=False, report_only=False, executor=execute):
+def run(settings, data, output, resume=False, report_only=False, executor=execute, workers=2):
+    if type(workers) is not int or not 1 <= workers <= 5:
+        raise ValueError('Workers must be between 1 and 5')
     data, root = Path(data).resolve(), Path(output).resolve()
     net = load_network(data)
     if Stage1Params().max_formation != 4 or Stage2Params().max_formation != 4:
@@ -390,46 +456,53 @@ def run(settings, data, output, resume=False, report_only=False, executor=execut
     started = perf_counter()
     status = 'interrupted_or_failed'
     bounds = read_json(root / 'objective_bounds.json', {}).get('upper')
+    process_group = ProcessGroup()
+    if executor is execute:
+        executor = partial(execute, process_group=process_group)
     try:
         if not report_only:
-            prepared = {}
-            for q in settings.capacities:
+            def prepare(q):
                 folder = root / f'capacity_{q}'
                 try:
-                    prepared[q] = prepare_case(settings, q, data, folder, net, executor)
+                    return q, prepare_case(settings, q, data, folder, net, executor)
                 except (ValueError, RuntimeError, OSError) as error:
                     state = read_json(folder / 'case.json', {})
                     state.update(capacity=q, stage1_complete=False, error=str(error))
                     write_json(folder / 'case.json', state)
                     print(f'Capacity {q}: stage 1 unavailable: {error}', flush=True)
+                    return q, None
+            prepared = {q: upper for q, upper in map_cases(prepare, settings.capacities, workers, process_group.cancel) if upper is not None}
             common = [max(v[j] for v in prepared.values()) for j in (0, 1)] if prepared else None
             if bounds is not None and common != bounds:
                 raise ValueError('Changed shared search bounds; do not combine existing searches with a new comparison design')
             bounds = common
             if bounds is not None:
                 write_json(root / 'objective_bounds.json', {'upper': bounds})
-            for q in prepared:
+            def search(q):
                 folder = root / f'capacity_{q}'
                 state = read_json(folder / 'case.json', {})
                 previous = collect_case(settings, q, folder, net, bounds)
                 if previous['budget_complete']:
-                    continue
+                    return
+                state.update(phase='stage2', status='running')
+                write_json(folder / 'case.json', state)
                 print(f"Capacity {q}: stage 2, {state['planned_timetables']} timetables x {settings.iterations} iterations", flush=True)
                 code = executor(stage2_command(settings, q, data, folder, root / 'objective_bounds.json',
                                                 (folder / 'stage2/configuration.json').exists()), folder / 'stage2.log')
-                state.update(stage2_exit_code=code)
+                state.update(stage2_exit_code=code, phase='stage2_completed', status='completed' if code == 0 else 'failed')
                 if code:
                     state['error'] = f'Stage 2 exited with {code}; inspect stage2.log and failure.json'
                 else:
                     state.pop('error', None)
                 write_json(folder / 'case.json', state)
+            map_cases(search, prepared, workers, process_group.cancel)
         cases = [collect_case(settings, q, root / f'capacity_{q}', net, bounds) for q in settings.capacities]
-        result = write_report(root, cases, settings, bounds)
+        result = write_report(root, cases, settings, bounds, workers)
         status = 'completed' if result['all_five_capacities_budget_complete'] else 'partial'
         return result
     finally:
         write_json(root / 'timing.json', {'status': status, 'invocation_elapsed_seconds': perf_counter() - started,
-                                          'total_elapsed_seconds': prior + perf_counter() - started})
+                                          'total_elapsed_seconds': prior + perf_counter() - started, 'parallel_workers': workers})
 
 
 def main():
@@ -443,6 +516,7 @@ def main():
     parser.add_argument('--evaluation-budget', type=int, default=0)
     parser.add_argument('--subproblem-seconds', type=float)
     parser.add_argument('--seed', type=int, default=2026)
+    parser.add_argument('--workers', type=int, choices=range(1, 6), default=2)
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--report-only', action='store_true', )
     args = parser.parse_args()
@@ -456,7 +530,7 @@ def main():
                             population=args.population, generations=args.generations,
                             evaluation_budget=args.evaluation_budget, seed=args.seed,
                             subproblem_seconds=args.subproblem_seconds)
-    report = run(settings, args.data, args.output, args.resume, args.report_only)
+    report = run(settings, args.data, args.output, args.resume, args.report_only, workers=args.workers)
     print('Recommended capacity:', report['recommended_capacity'], flush=True)
     print('Report:', args.output / 'analysis.md', flush=True)
     print('Figure:', args.output / 'capacity_pareto_front.png', flush=True)
