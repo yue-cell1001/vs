@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+results/
+.coverage
+.pytest_cache/
+
+# Local datasets and historical/generated evidence are never published.
+/data/
+/docs/legacy/
+/docs/*.json
