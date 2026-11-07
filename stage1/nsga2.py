@@ -97,7 +97,8 @@ def solve(net, p, stats=None, verify_baseline=False):
             if not proposals:
                 return table
             if rng.random() < p.demand_guided_mutation:
-                return min(proposals, key=lambda x: score(x)[1])
+                objective = rng.randrange(2)
+                return min(proposals, key=lambda x: score(x)[objective])
             return rng.choice(proposals)
         for generation in range(p.generations):
             values = [score(x, count=False) for x in population]
