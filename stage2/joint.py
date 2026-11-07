@@ -56,6 +56,8 @@ class JointOptimizer:
         self.solves = 0
         self.initial_hint = None
         self.initial_seed_used = False
+        self.objective_scales = None
+        self.tradeoff_weights = (.5, .5)
 
     def solve(self, duties, trips, excursions, required, preference=0):
         p, net = (self.p, self.net)
@@ -184,7 +186,6 @@ class JointOptimizer:
                 rows.add(entries, -p.depot_initial, p.depot_capacity - p.depot_initial)
         costs1 = np.asarray(c1)
         costs2 = np.asarray(c2)
-        first_cost, second_cost = (costs1, costs2) if preference == 0 else (costs2, costs1)
         matrix = rows.matrix(len(lower))
         seed = self.incumbent(groups, members, columns, requests, use, birth, finish, chosen, links, lower, upper, matrix, rows.lower, rows.upper, forced, backup)
         from common.integer import _verified
@@ -192,19 +193,32 @@ class JointOptimizer:
         if verified_seed is not None:
             x = np.rint(verified_seed).astype(int)
             return self.materialize(groups, members, columns, chosen, use, birth, finish, links, x, excursions, {'status': 'feasible_verified_not_optimized', 'primary_gap': None, 'F1_linear': float(costs1 @ x + constant), 'F2_linear': float(costs2 @ x), 'initial_reservation_seed': self.initial_seed_used})
-        result = solve_integer(first_cost, lower, upper, matrix, rows.lower, rows.upper, p.subproblem_seconds, seed)
+        from .scalarization import build_problem
+        if self.objective_scales is None:
+            from .bounds import objective_bounds
+            table = {}
+            for trip in trips.values():
+                table.setdefault(trip.line, []).append(trip.visits[0].arrival)
+            table = {line: sorted(set(times)) for line, times in table.items()}
+            self.objective_scales = objective_bounds(net, [{'timetable': table}], p)[0]
+        problem = build_problem(costs1, costs2, constant, lower, upper, matrix,
+                                rows.lower, rows.upper, seed, self.objective_scales, self.tradeoff_weights)
+        cost, lo, hi, full, lb, ub, warm, integrality, weights = problem
+        result = solve_integer(cost, lo, hi, full, lb, ub, p.subproblem_seconds, warm, integrality=integrality)
         self.solves += 1
         if result.x is None:
             raise Infeasible(f'Joint integer allocation: {result.message}; no verified incumbent')
-        primary = float(first_cost @ result.x)
-        from scipy.sparse import vstack, csr_array
-        lex_matrix = vstack([matrix, csr_array(first_cost.reshape(1, -1))], format='csc')
-        result2 = solve_integer(second_cost, lower, upper, lex_matrix, rows.lower + [-np.inf], rows.upper + [primary + 1e-06], p.subproblem_seconds, result.x)
-        self.solves += 1
-        secondary_valid = result2.x is not None
-        x = np.rint(result2.x if secondary_valid else result.x).astype(int)
-        proven = result.optimal and secondary_valid and result2.optimal
-        return self.materialize(groups, members, columns, chosen, use, birth, finish, links, x, excursions, {'status': 'optimal' if proven else 'feasible_not_proven_optimal', 'primary_gap': result.gap, 'secondary_gap': result2.gap, 'primary_status': result.message, 'secondary_status': result2.message, 'secondary_incumbent_available': secondary_valid, 'primary_lower_bound': result.lower_bound, 'primary_value': float(first_cost @ x), 'variables': len(lower), 'constraints': len(rows.lower), 'solver_calls': self.solves, 'initial_reservation_seed': self.initial_seed_used, 'F1_linear': float(costs1 @ x + constant), 'F2_linear': float(costs2 @ x)})
+        x = np.rint(result.x[:-1]).astype(int)
+        return self.materialize(groups, members, columns, chosen, use, birth, finish, links, x, excursions, {
+            'status': 'scalar_optimal' if result.optimal else 'feasible_not_proven_optimal',
+            'optimization_method': 'augmented_weighted_chebyshev',
+            'optimality_scope': 'fixed_routes_and_recorded_direction',
+            'objective_scales': list(self.objective_scales), 'tradeoff_weights': list(weights),
+            'augmentation': .001, 'scalar_gap': result.gap, 'scalar_status': result.message,
+            'scalar_lower_bound': result.lower_bound, 'scalar_value': float(cost @ result.x),
+            'variables': len(lo), 'constraints': full.shape[0], 'solver_calls': self.solves,
+            'solve_calls_this_allocation': 1, 'initial_reservation_seed': self.initial_seed_used,
+            'F1_linear': float(costs1 @ x + constant), 'F2_linear': float(costs2 @ x)})
 
     def incumbent(self, groups, members, columns, requests, use, birth, finish, chosen, links, lower, upper, matrix, lb, ub, forced, backup):
         p = self.p

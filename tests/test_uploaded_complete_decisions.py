@@ -62,7 +62,7 @@ class CompleteDecisionTests(unittest.TestCase):
         b = Duty('B', list(trip.visits[:3]), list(trip.legs[:2]))
         b.visits[-1] = replace(b.visits[-1], kind='depot')
         s = JointOptimizer(net, p).solve({'A': a, 'B': b}, {'A:0': trip}, (), set())
-        self.assertEqual(s.metadata['joint_solver']['status'], 'optimal')
+        self.assertEqual(s.metadata['joint_solver']['status'], 'scalar_optimal')
         self.assertEqual(s.services[1].rides[0].duty, 'B')
         self.assertEqual(s.services[2].rides[0].duty, 'A')
 
@@ -79,7 +79,7 @@ class CompleteDecisionTests(unittest.TestCase):
         net.edges[4, 1] = (0.5, 1)
         trips = {key: Trip(key, 'A', tuple(d.visits), tuple(d.legs)) for key, d in units.items()}
         s = JointOptimizer(net, p).solve(units, trips, (), set())
-        self.assertEqual(s.metadata['joint_solver']['status'], 'optimal')
+        self.assertEqual(s.metadata['joint_solver']['status'], 'scalar_optimal')
         self.assertEqual(s.metadata['fleet_size'], 2)
         self.assertEqual(s.duties['B'].vehicle, s.duties['J'].vehicle)
         self.assertEqual(s.duties['C'].vehicle, s.duties['I'].vehicle)
@@ -105,21 +105,17 @@ class CompleteDecisionTests(unittest.TestCase):
         bad.metadata['operations'] = []
         self.assertTrue(any(('dwell mask' in e for e in validate(bad, d.net, d.trips, d.p))))
 
-    def test_failed_secondary_solve_never_inherits_primary_optimal_status(self):
+    def test_allocation_uses_one_symmetric_integer_solve(self):
         from unittest.mock import patch
-        from common.integer import solve_integer, Result
-        net = network()
-        calls = []
-
-        def interrupted(*args, **kwargs):
-            calls.append(1)
-            if len(calls) == 2:
-                return Result(None, False, None, None, 'Interrupted')
-            return solve_integer(*args, **kwargs)
-        d = Decoder(net, timetable(), Params())
-        with patch('stage2.joint.solve_integer', side_effect=interrupted):
-            s = d.decode((), set(), audit=True)
-        self.assertFalse(s.errors, s.errors)
-        self.assertEqual(s.metadata['joint_solver']['primary_status'], 'Optimal')
-        self.assertEqual(s.metadata['joint_solver']['status'], 'feasible_not_proven_optimal')
-        self.assertFalse(s.metadata['joint_solver']['secondary_incumbent_available'])
+        from common.integer import solve_integer
+        d = Decoder(network(), timetable(), Params())
+        with patch('stage2.joint.solve_integer', wraps=solve_integer) as solver:
+            solution = d.decode((), set(), audit=True)
+        self.assertFalse(solution.errors, solution.errors)
+        self.assertEqual(solver.call_count, 1)
+        numeric = solution.metadata['joint_solver']
+        self.assertEqual(numeric['optimization_method'], 'augmented_weighted_chebyshev')
+        self.assertEqual(numeric['tradeoff_weights'], [.5, .5])
+        self.assertEqual(numeric['status'], 'scalar_optimal')
+        self.assertNotIn('primary_status', numeric)
+        self.assertNotIn('secondary_status', numeric)

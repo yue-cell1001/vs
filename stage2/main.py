@@ -12,6 +12,7 @@ from .alns import solve, NoFeasibleSolution
 from .audit import restore
 from .report import export
 from .bounds import objective_bounds
+from .scalarization import reference_scales, positive_pair
 
 def _write(path, value):
     temporary = path.with_suffix(path.suffix + '.tmp')
@@ -62,15 +63,21 @@ def main():
     fingerprint = digest.hexdigest()
     upper, bound_calculation = objective_bounds(net, candidates, p)
     if args.objective_bounds:
-        shared = json.loads(Path(args.objective_bounds).read_text(encoding='utf-8'))['upper']
+        shared_configuration = json.loads(Path(args.objective_bounds).read_text(encoding='utf-8'))
+        shared = shared_configuration['upper']
         if len(shared) != 2 or any((not 0 < local <= fixed for local, fixed in zip(upper, shared))):
             raise ValueError('Shared objective bounds do not cover this case')
         upper = tuple(shared)
+    allocation_scales = reference_scales(candidates, upper)
+    if args.objective_bounds:
+        allocation_scales = positive_pair(shared_configuration.get('allocation_scales', allocation_scales))
     if not args.resume and any(root.iterdir()):
         raise ValueError('Output directory is not empty; use --resume or a new directory')
     if args.resume:
         manifest = search_defaults(json.loads((root / 'configuration.json').read_text(encoding='utf-8')))
         parameters = json.loads(json.dumps(asdict(p)))
+        if manifest.get('allocation_scales') != list(allocation_scales):
+            raise ValueError('Resume objective scale mismatch')
         if manifest['fingerprint'] != fingerprint:
             raise ValueError('Resume configuration/input mismatch')
         if manifest['parameters'] != parameters:
@@ -80,7 +87,7 @@ def main():
                 raise ValueError('Warehouse capacity changed after a feasible search was saved; use a new output directory')
     elif (root / 'configuration.json').exists():
         raise ValueError('Output exists; use --resume or another directory')
-    _write(root / 'configuration.json', {'fingerprint': fingerprint, 'parameters': asdict(p), 'objective_bounds': upper, 'bound_calculation': bound_calculation})
+    _write(root / 'configuration.json', {'fingerprint': fingerprint, 'parameters': asdict(p), 'objective_bounds': upper, 'bound_calculation': bound_calculation, 'allocation_scales': allocation_scales})
     previous_elapsed = 0.0
     if args.resume and (root / 'timing.json').exists():
         previous_elapsed = json.loads((root / 'timing.json').read_text(encoding='utf-8')).get('total_elapsed_seconds', 0)
@@ -135,7 +142,7 @@ def main():
                 _write(root / 'timing.json', timing('running'))
             print(f'Timetable {k + 1}/{len(candidates)}', flush=True)
             try:
-                solutions, stat = solve(net, candidate['timetable'], cp, checkpoint=checkpoint, resume=recovered, global_archive=archive, upper=upper)
+                solutions, stat = solve(net, candidate['timetable'], cp, checkpoint=checkpoint, resume=recovered, global_archive=archive, upper=upper, allocation_scales=allocation_scales)
             except NoFeasibleSolution as error:
                 failures.append({'timetable': k, 'error': str(error)})
                 _write(folder / 'failure.json', failures[-1])

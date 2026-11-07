@@ -63,7 +63,7 @@ class InitialConstructionTests(unittest.TestCase):
         self.assertFalse(result.errors, result.errors)
         args = solver.call_args_list[0].args
         self.assertIsNotNone(args[7])
-        self.assertIsNotNone(_verified(args[7], args[1], args[2], args[3], args[4], args[5]))
+        self.assertIsNotNone(_verified(args[7], args[1], args[2], args[3], args[4], args[5], solver.call_args_list[0].kwargs.get('integrality')))
 
     def test_pickup_can_shift_within_its_window_to_meet_coupling(self):
         n, p, table = scenario()

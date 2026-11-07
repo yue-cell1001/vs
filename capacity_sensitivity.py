@@ -21,6 +21,7 @@ from stage1.constraints import violations
 from stage2.params import Params as Stage2Params
 from stage2.bounds import objective_bounds
 from stage2.audit import audit_file
+from stage2.scalarization import reference_scales
 
 PROJECT = Path(__file__).resolve().parent
 CAPACITIES = (4, 5, 6, 7, 8)
@@ -250,6 +251,9 @@ def collect_case(settings, capacity, folder, net, shared_bounds):
     configuration = read_json(folder / 'stage2/configuration.json', {})
     if run.get('parameters') != expected or configuration.get('parameters') != expected:
         raise ValueError(f'Capacity {capacity}: operational/search parameter mismatch')
+    expected_scales = read_json(folder.parent / 'objective_bounds.json', {}).get('allocation_scales')
+    if configuration.get('allocation_scales') != expected_scales:
+        raise ValueError('Capacity allocation scales do not match')
     if shared_bounds is None or configuration.get('objective_bounds') != list(shared_bounds):
         raise ValueError('Capacity cases did not use the same search normalization')
     rows = []
@@ -477,7 +481,9 @@ def run(settings, data, output, resume=False, report_only=False, executor=execut
                 raise ValueError('Changed shared search bounds; do not combine existing searches with a new comparison design')
             bounds = common
             if bounds is not None:
-                write_json(root / 'objective_bounds.json', {'upper': bounds})
+                pool = [item for q in prepared for item in read_json(root / f'capacity_{q}' / 'stage1.json')]
+                allocation_scales = reference_scales(pool, bounds)
+                write_json(root / 'objective_bounds.json', {'upper': bounds, 'allocation_scales': allocation_scales})
             def search(q):
                 folder = root / f'capacity_{q}'
                 state = read_json(folder / 'case.json', {})

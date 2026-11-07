@@ -12,6 +12,7 @@ from .insertion import insert
 from .learning import Automaton
 from .timing import shifted_candidates, validate_branch
 from .budget import SearchTimeout
+from .scalarization import DIRECTIONS, positive_pair
 
 class NoFeasibleSolution(RuntimeError):
     pass
@@ -51,13 +52,14 @@ def choose_baseline(items, rng):
     a, b = rng.choices(range(len(items)), k=2)
     return items[a if distance[a] >= distance[b] else b]
 
-def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=None, global_archive=None, upper=None):
+def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=None, global_archive=None, upper=None, allocation_scales=None):
     from .bounds import objective_bounds
     start = monotonic()
     rng = random.Random(p.seed)
     archive = Archive()
     global_archive = global_archive if global_archive is not None else Archive()
     upper = upper or objective_bounds(net, [{'timetable': timetable}], p)[0]
+    allocation_scales = positive_pair(allocation_scales or upper)
     actions = [(d, r) for d in range(5) for r in range(3) if d != 4 or r == 2]
     learner = Automaton(actions, p.learning_rate, p.exploration)
     failures = []
@@ -70,6 +72,8 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
     if resume:
         archive.items = list(resume['solutions'])
         state = resume['state']
+        if tuple(state.get('allocation_scales', ())) != allocation_scales:
+            raise ValueError('Resume objective scale mismatch')
         offset = state['iteration']
         trace = state['trace']
         rng.setstate(_tuple(state['rng']))
@@ -82,6 +86,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
             global_archive.add(s)
     else:
         decoder = Decoder(net, timetable, p)
+        decoder.objective_scales = allocation_scales
         requests = sorted((x for x in net.passengers if x.kind), key=lambda x: (x.latest, x.id))
         seeds=tuple(seeds)
         for decisions in seeds:
@@ -144,7 +149,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
         initialization_elapsed = monotonic() - start
 
     def state(iteration):
-        return {'iteration': iteration, 'rng': rng.getstate(), 'learner': learner.snapshot(), 'trace': trace, 'base_timetable': timetable, 'initial_failures': failures, 'objective_bounds': upper, 'stall': stall, 'initialization_elapsed_seconds': initialization_elapsed, 'elapsed_seconds': previous_elapsed + monotonic() - start}
+        return {'iteration': iteration, 'rng': rng.getstate(), 'learner': learner.snapshot(), 'trace': trace, 'base_timetable': timetable, 'initial_failures': failures, 'objective_bounds': upper, 'allocation_scales': allocation_scales, 'stall': stall, 'initialization_elapsed_seconds': initialization_elapsed, 'elapsed_seconds': previous_elapsed + monotonic() - start}
     search_deadline = monotonic() + p.search_seconds if p.search_seconds else None
     if checkpoint:
         checkpoint(archive.items, {'phase': 'search', 'iteration': offset, 'state': state(offset)})
@@ -165,6 +170,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
         before = monotonic()
         decoder = Decoder(net, current.metadata['timetable'], p)
         decoder.upper = upper
+        decoder.objective_scales = allocation_scales
         partial, pending = destroy(decoder, current, d, rng)
         rng.shuffle(pending)
         trial = None
@@ -176,6 +182,8 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
             table = next((candidate for candidate in shifted if candidate != decoder.timetable and validate_branch(candidate, timetable, p)), table)
         if validate_branch(table, timetable, p):
             local = Decoder(net, table, p)
+            local.objective_scales = allocation_scales
+            local.tradeoff_weights = rng.choice(DIRECTIONS)
             local.deadline = monotonic() + p.repair_seconds if p.repair_seconds else None
             if search_deadline is not None:
                 local.deadline = min(local.deadline or search_deadline, search_deadline)
@@ -209,7 +217,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                 checkpoint([trial], {'phase': 'iteration_candidate', 'iteration': iteration + 1})
         learner.feedback(action, reward)
         stall = 0 if retained else stall + 1
-        trace.append({'iteration': iteration + 1, 'hv': hypervolume([s.objectives for s in archive.items], upper, p.hv_margin), 'action': action, 'reward': reward, 'hv_gain': gain, 'pareto_improvement': improvement, 'repair_complete': trial is not None, 'retained': retained, 'served': len(trial.services) if trial else 0, 'trial_objectives': trial.objectives if trial else None, 'before_objectives': current.objectives, 'failed_request': failed, 'destroyed_requests': pending, 'decode_calls': decode_calls, 'elapsed_seconds': monotonic() - before})
+        trace.append({'iteration': iteration + 1, 'hv': hypervolume([s.objectives for s in archive.items], upper, p.hv_margin), 'action': action, 'reward': reward, 'hv_gain': gain, 'pareto_improvement': improvement, 'repair_complete': trial is not None, 'retained': retained, 'served': len(trial.services) if trial else 0, 'trial_objectives': trial.objectives if trial else None, 'before_objectives': current.objectives, 'failed_request': failed, 'destroyed_requests': pending, 'decode_calls': decode_calls, 'tradeoff_weights': list(local.tradeoff_weights) if validate_branch(table, timetable, p) else None, 'elapsed_seconds': monotonic() - before})
         if checkpoint:
             checkpoint(archive.items, {'phase': 'search', 'iteration': iteration + 1, 'state': state(iteration + 1)})
         progress(f'iteration {iteration + 1}/{p.iterations}: feasible={trial is not None}, reward={reward:.6g}, archive={len(archive.items)}')

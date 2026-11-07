@@ -23,6 +23,8 @@ class Decoder:
         from .joint import JointOptimizer
         self.optimizer = JointOptimizer(net, p)
         self.preference = 0
+        self.objective_scales = None
+        self.tradeoff_weights = (.5, .5)
         self.allow_solo = True
         from .incremental import DeltaAudit, DeltaEvaluator
         self.delta_audit = DeltaAudit(net, p)
@@ -44,7 +46,7 @@ class Decoder:
         if required is None:
             required = {pid for e in excursions for pid, _ in e.events}
         required = set(required)
-        cache_key = (tuple(excursions), frozenset(required), self.preference, bool(audit), bool(getattr(self.optimizer, 'verify_only', False)))
+        cache_key = (tuple(excursions), frozenset(required), self.preference, tuple(self.tradeoff_weights), tuple(self.objective_scales) if self.objective_scales is not None else None, bool(audit), bool(getattr(self.optimizer, 'verify_only', False)))
         try:
             context = self.context(excursions)
             self.trips, self.base = (context.trips, context.base)
@@ -53,6 +55,9 @@ class Decoder:
                 return deepcopy(self.decode_cache[cache_key])
             duties = context.duties
             operations = context.operations
+            if self.objective_scales is not None:
+                self.optimizer.objective_scales = tuple(self.objective_scales)
+            self.optimizer.tradeoff_weights = tuple(self.tradeoff_weights)
             solution = self.optimizer.solve(duties, self.trips, excursions, required, self.preference)
             solution.metadata['allocation_preference'] = self.preference
             solution.metadata['timetable'] = self.timetable
