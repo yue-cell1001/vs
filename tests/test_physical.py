@@ -14,30 +14,31 @@ from tests.fixtures import scenario, network
 
 class PhysicalTests(unittest.TestCase):
 
-    def test_original_constructor_routes_all_requests_without_joint_solves(self):
+    def test_uploaded_constructor_routes_all_requests_without_joint_solves(self):
         from unittest.mock import patch
         n, p, table = scenario(ordinary=1, drt=2)
         decoder = Decoder(n, table, p)
         with patch.object(decoder, 'decode', side_effect=AssertionError('Original construction does not solve allocations')):
             plan = construct(decoder, 0, random.Random(p.seed), progress=lambda _: None)
         self.assertEqual({pid for e in plan for pid, pickup in e.events if pickup}, {100, 101})
-        self.assertTrue(all(not e.target for e in plan))
+        self.assertTrue(all(e.target for e in plan))
         self.assertFalse(decoder.decode(plan, {100, 101}, audit=True).errors)
 
-    def test_original_constructor_does_not_invoke_added_draft_guard(self):
+    def test_uploaded_constructor_checks_draft_capacity_before_final_allocation(self):
         from unittest.mock import patch
-        from stage2.initial_capacity import CapacityGuard
+        from stage2.initialization import draft_check
         n, p, table = scenario()
         decoder = Decoder(n, table, p)
-        with patch.object(CapacityGuard, 'check', side_effect=AssertionError('Do not change original candidate screening')):
+        with patch('stage2.initialization.draft_check', wraps=draft_check) as guard:
             plan = construct(decoder, 0, random.Random(p.seed), progress=lambda _: None)
+        self.assertGreater(guard.call_count, 0)
         self.assertFalse(decoder.decode(plan, {100}, audit=True).errors)
 
     def test_original_initialization_uses_all_configured_rules(self):
         from unittest.mock import patch
         n, p, table = scenario()
         with patch('stage2.initialization.construct', wraps=construct) as build:
-            items, stats = solve(n, table, replace(p, iterations=0), progress=lambda _: None)
+            items, stats = solve(n, table, replace(p, iterations=0, initial_solutions=3), progress=lambda _: None)
         self.assertEqual([c.args[1] for c in build.call_args_list], [0, 1, 2])
         self.assertTrue(items)
         self.assertFalse(stats['initial_failures'])

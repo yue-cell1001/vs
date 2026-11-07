@@ -15,7 +15,9 @@ from .budget import SearchTimeout
 from .scalarization import DIRECTIONS, positive_pair
 
 class NoFeasibleSolution(RuntimeError):
-    pass
+    def __init__(self, message, diagnostics=None):
+        super().__init__(message)
+        self.diagnostics = diagnostics or {}
 
 def _tuple(value):
     return tuple((_tuple(x) for x in value)) if isinstance(value, list) else value
@@ -67,6 +69,9 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
     offset = 0
     previous_elapsed = 0
     initialization_elapsed = 0.0
+    initialization_construction_seconds = 0.0
+    initialization_decode_seconds = 0.0
+    initialization_attempts = []
     stall = 0
     termination = 'iterations'
     if resume:
@@ -81,18 +86,44 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
         previous_elapsed = state.get('elapsed_seconds', 0)
         failures = state.get('initial_failures', [])
         initialization_elapsed = state.get('initialization_elapsed_seconds', 0.0)
+        initialization_construction_seconds = state.get('initialization_construction_seconds', 0.0)
+        initialization_decode_seconds = state.get('initialization_decode_seconds', 0.0)
+        initialization_attempts = state.get('initialization_attempts', [])
         stall = state.get('stall', 0)
         for s in archive.items:
             global_archive.add(s)
     else:
         decoder = Decoder(net, timetable, p)
         decoder.objective_scales = allocation_scales
+        def initial_decode(*args, **kwargs):
+            nonlocal initialization_decode_seconds
+            before = monotonic()
+            progress('  Initial joint allocation started')
+            try:
+                return decoder.decode(*args, **kwargs)
+            finally:
+                elapsed = monotonic() - before
+                initialization_decode_seconds += elapsed
+                progress(f'  Initial joint allocation finished in {elapsed:.2f} seconds')
+
+        def initial_construct(rule):
+            nonlocal initialization_construction_seconds
+            from .initialization import construct
+            before = monotonic()
+            try:
+                return construct(decoder, rule, rng, progress)
+            finally:
+                elapsed = monotonic() - before
+                initialization_construction_seconds += elapsed
+                initialization_attempts.append({'rule': rule, 'construction_seconds': elapsed, 'statistics': dict(getattr(decoder, 'initialization_stats', {}))})
+                progress(f'  Initial route construction finished in {elapsed:.2f} seconds')
+
         requests = sorted((x for x in net.passengers if x.kind), key=lambda x: (x.latest, x.id))
         seeds=tuple(seeds)
         for decisions in seeds:
             for preference in (0,1):
                 decoder.preference=preference
-                initial=decoder.decode(tuple(decisions),{q.id for q in requests},audit=True)
+                initial=initial_decode(tuple(decisions),{q.id for q in requests},audit=True)
                 if initial.errors: failures.append({'warm_start':True,'errors':initial.errors})
                 else: archive.add(initial)
         for rule in range(0 if seeds or resume is not None else p.initial_solutions):
@@ -102,8 +133,8 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                 from .initialization import construct
                 from .routing import Infeasible
                 try:
-                    decisions=construct(decoder,rule,rng,progress)
-                    initial=decoder.decode(decisions,{q.id for q in requests},audit=True)
+                    decisions=initial_construct(rule)
+                    initial=initial_decode(decisions,{q.id for q in requests},audit=True)
                     if initial.errors:
                         from .recovery import fixed_cuts,relief
                         cuts=fixed_cuts(net,timetable,p)
@@ -112,7 +143,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                             try:
                                 supported=relief(decoder,decisions,cuts,strategy)
                                 if supported==decisions: continue
-                                candidate=decoder.decode(supported,{q.id for q in requests},audit=True)
+                                candidate=initial_decode(supported,{q.id for q in requests},audit=True)
                                 if not candidate.errors:
                                     candidate.metadata['initial_recovery']=strategy
                                     initial=candidate
@@ -137,19 +168,19 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                     excursions=initial.excursions
                     if (index+1)%50==0: progress(f'  initial {rule+1}: {index+1}/{len(requests)} DRT, {monotonic()-start:.1f}s')
                 else:
-                    if initial is None: initial=decoder.decode((),set(),audit=True)
+                    if initial is None: initial=initial_decode((),set(),audit=True)
                     initial.errors=validate(initial,net,decoder.trips,p)
                     archive.add(initial)
 
         if not archive.items:
-            raise NoFeasibleSolution(f'No complete feasible initial schedule; {failures}. No requests were silently dropped. This initialization failure is not a timetable infeasibility proof; try other initial strategies or diagnose fixed-path capacity.')
+            raise NoFeasibleSolution(f'No complete feasible initial schedule; {failures}. No requests were silently dropped. This initialization failure is not a timetable infeasibility proof; try other initial strategies or diagnose fixed-path capacity.', {'initialization_elapsed_seconds': monotonic() - start, 'initialization_construction_seconds': initialization_construction_seconds, 'initialization_decode_seconds': initialization_decode_seconds, 'initialization_attempts': initialization_attempts, 'initial_failures': failures})
         for candidate in archive.items:
             candidate.metadata['branch_base'] = timetable
             global_archive.add(candidate)
         initialization_elapsed = monotonic() - start
 
     def state(iteration):
-        return {'iteration': iteration, 'rng': rng.getstate(), 'learner': learner.snapshot(), 'trace': trace, 'base_timetable': timetable, 'initial_failures': failures, 'objective_bounds': upper, 'allocation_scales': allocation_scales, 'stall': stall, 'initialization_elapsed_seconds': initialization_elapsed, 'elapsed_seconds': previous_elapsed + monotonic() - start}
+        return {'iteration': iteration, 'rng': rng.getstate(), 'learner': learner.snapshot(), 'trace': trace, 'base_timetable': timetable, 'initial_failures': failures, 'objective_bounds': upper, 'allocation_scales': allocation_scales, 'stall': stall, 'initialization_elapsed_seconds': initialization_elapsed, 'initialization_construction_seconds': initialization_construction_seconds, 'initialization_decode_seconds': initialization_decode_seconds, 'initialization_attempts': initialization_attempts, 'elapsed_seconds': previous_elapsed + monotonic() - start}
     search_deadline = monotonic() + p.search_seconds if p.search_seconds else None
     if checkpoint:
         checkpoint(archive.items, {'phase': 'search', 'iteration': offset, 'state': state(offset)})
@@ -168,6 +199,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
         action = learner.choose(rng, available)
         d, r = action
         before = monotonic()
+        progress(f'iteration {iteration + 1}/{p.iterations}: started')
         decoder = Decoder(net, current.metadata['timetable'], p)
         decoder.upper = upper
         decoder.objective_scales = allocation_scales
@@ -220,13 +252,16 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
         trace.append({'iteration': iteration + 1, 'hv': hypervolume([s.objectives for s in archive.items], upper, p.hv_margin), 'action': action, 'reward': reward, 'hv_gain': gain, 'pareto_improvement': improvement, 'repair_complete': trial is not None, 'retained': retained, 'served': len(trial.services) if trial else 0, 'trial_objectives': trial.objectives if trial else None, 'before_objectives': current.objectives, 'failed_request': failed, 'destroyed_requests': pending, 'decode_calls': decode_calls, 'tradeoff_weights': list(local.tradeoff_weights) if validate_branch(table, timetable, p) else None, 'elapsed_seconds': monotonic() - before})
         if checkpoint:
             checkpoint(archive.items, {'phase': 'search', 'iteration': iteration + 1, 'state': state(iteration + 1)})
-        progress(f'iteration {iteration + 1}/{p.iterations}: feasible={trial is not None}, reward={reward:.6g}, archive={len(archive.items)}')
+        progress(f'iteration {iteration + 1}/{p.iterations}: feasible={trial is not None}, reward={reward:.6g}, archive={len(archive.items)}, elapsed={trace[-1]["elapsed_seconds"]:.2f}s')
     return archive.items, {
         'iterations': trace[-1]['iteration'] if trace else offset,
         'complete_feasible_iterations': sum(row['repair_complete'] for row in trace),
         'trace': trace, 'initial_failures': failures, 'termination': termination,
         'elapsed_seconds': previous_elapsed + monotonic() - start,
         'initialization_elapsed_seconds': initialization_elapsed,
+        'initialization_construction_seconds': initialization_construction_seconds,
+        'initialization_decode_seconds': initialization_decode_seconds,
+        'initialization_attempts': initialization_attempts,
         'iteration_elapsed_seconds': sum(row['elapsed_seconds'] for row in trace),
         'learner': learner.snapshot(), 'objective_bounds': upper,
     }

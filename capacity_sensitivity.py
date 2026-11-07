@@ -35,7 +35,7 @@ class Settings:
     generations: int = Stage1Params().generations
     evaluation_budget: int = 0
     seed: int = 2026
-    subproblem_seconds: float | None = None
+    subproblem_seconds: float | None = Stage2Params().subproblem_seconds
 
     def __post_init__(self):
         if not self.capacities or len(set(self.capacities)) != len(self.capacities) or any(q not in CAPACITIES for q in self.capacities):
@@ -520,7 +520,7 @@ def main():
     parser.add_argument('--population', type=int, default=Stage1Params().population)
     parser.add_argument('--generations', type=int, default=Stage1Params().generations)
     parser.add_argument('--evaluation-budget', type=int, default=0)
-    parser.add_argument('--subproblem-seconds', type=float)
+    parser.add_argument('--subproblem-seconds', type=float, default=Stage2Params().subproblem_seconds)
     parser.add_argument('--seed', type=int, default=2026)
     parser.add_argument('--workers', type=int, choices=range(1, 6), default=2)
     parser.add_argument('--resume', action='store_true')

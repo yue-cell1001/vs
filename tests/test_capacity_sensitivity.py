@@ -23,6 +23,7 @@ class CapacitySensitivityTests(unittest.TestCase):
         settings = study.Settings()
         self.assertEqual(settings.capacities, (4, 5, 6, 7, 8))
         self.assertEqual(settings.iterations, 10)
+        self.assertEqual(settings.subproblem_seconds, 30.0)
         self.assertEqual((settings.population, settings.generations), (64, 200))
         for q in settings.capacities:
             purchase, operating = settings.costs(q)
@@ -32,7 +33,7 @@ class CapacitySensitivityTests(unittest.TestCase):
             self.assertEqual(settings.stage1(q).candidates, 20)
             self.assertEqual(settings.stage1(q).reference_load, .8)
             self.assertEqual(settings.stage2(q).max_formation, 4)
-            self.assertEqual(settings.stage2(q).initial_solutions, 3)
+            self.assertEqual(settings.stage2(q).initial_solutions, 1)
             self.assertEqual(settings.stage2(q).repair_mode, 'constructive')
         self.assertEqual(settings.costs(4)[1], .2)
         self.assertEqual(settings.costs(8)[1], .4)

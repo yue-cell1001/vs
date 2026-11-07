@@ -29,7 +29,7 @@ def main():
     parser.add_argument('--repair-seconds', type=float)
     parser.add_argument('--initialization', choices=('constructive', 'insertion'), default='constructive')
     parser.add_argument('--repair-mode', choices=('constructive', 'exhaustive'), default='constructive')
-    parser.add_argument('--initial-solutions', type=int, default=3)
+    parser.add_argument('--initial-solutions', type=int, default=Params().initial_solutions)
     parser.add_argument('--initial-feasible-target', type=int)
     parser.add_argument('--search-seconds', type=float)
     parser.add_argument('--stall', type=int, default=60)
@@ -144,7 +144,7 @@ def main():
             try:
                 solutions, stat = solve(net, candidate['timetable'], cp, checkpoint=checkpoint, resume=recovered, global_archive=archive, upper=upper, allocation_scales=allocation_scales)
             except NoFeasibleSolution as error:
-                failures.append({'timetable': k, 'error': str(error)})
+                failures.append({'timetable': k, 'error': str(error), **error.diagnostics})
                 _write(folder / 'failure.json', failures[-1])
                 processed = k + 1
             else:

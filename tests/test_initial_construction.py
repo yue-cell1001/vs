@@ -53,6 +53,48 @@ class InitialConstructionTests(unittest.TestCase):
         self.assertEqual(len(result.services), 9)
         self.assertEqual({pid for e in plan for pid, pickup in e.events if pickup}, {100, 101})
 
+    def test_initialization_does_not_replace_preserved_repair_construction(self):
+        import random
+        from unittest.mock import patch
+        from stage2.initialization import construct, _construct_preserved_repair
+        n, p, table = scenario(ordinary=1, drt=1)
+        decoder = Decoder(n, table, p)
+        with patch('stage2.initialization._construct_preserved_repair', wraps=_construct_preserved_repair) as original, patch('stage2.initialization.draft_check', side_effect=AssertionError('New draft checks are initialization only')):
+            plan = construct(decoder, 0, random.Random(p.seed), pending=[100])
+        self.assertEqual(original.call_count, 1)
+        self.assertTrue(all(not e.target for e in plan))
+        self.assertFalse(decoder.decode(plan, {100}, audit=True).errors)
+
+    def test_initialization_records_failed_construction_time_and_keeps_trying(self):
+        from stage2.alns import solve
+        from stage2.initialization import construct
+        from unittest.mock import patch
+        import random
+        n, p, table = scenario(ordinary=1, drt=1)
+        decoder = Decoder(n, table, p)
+        plan = construct(decoder, 0, random.Random(p.seed), progress=lambda _: None)
+        with patch('stage2.initialization.construct', side_effect=[Infeasible('Rejected construction'), plan]):
+            items, stats = solve(n, table, replace(p, iterations=0, initial_solutions=2), progress=lambda _: None)
+        self.assertTrue(items)
+        self.assertEqual(len(stats['initialization_attempts']), 2)
+        self.assertGreater(stats['initialization_construction_seconds'], 0)
+        self.assertGreater(stats['initialization_decode_seconds'], 0)
+        self.assertGreaterEqual(stats['initialization_elapsed_seconds'], stats['initialization_construction_seconds'] + stats['initialization_decode_seconds'])
+        self.assertEqual(len(stats['initial_failures']), 1)
+
+    def test_failed_initialization_exposes_diagnostics_without_claiming_feasibility(self):
+        from stage2.alns import solve, NoFeasibleSolution
+        from unittest.mock import patch
+        n, p, table = scenario()
+        with patch('stage2.initialization.construct', side_effect=Infeasible('Construction rejected')):
+            with self.assertRaises(NoFeasibleSolution) as caught:
+                solve(n, table, replace(p, iterations=0), progress=lambda _: None)
+        diagnostics = caught.exception.diagnostics
+        self.assertGreater(diagnostics['initialization_elapsed_seconds'], 0)
+        self.assertGreater(diagnostics['initialization_construction_seconds'], 0)
+        self.assertEqual(diagnostics['initialization_decode_seconds'], 0)
+        self.assertEqual(len(diagnostics['initial_failures']), 1)
+
     def test_unused_warehouse_templates_do_not_break_the_baseline_seed(self):
         from unittest.mock import patch
         from common.integer import solve_integer, _verified
