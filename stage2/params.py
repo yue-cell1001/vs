@@ -25,6 +25,7 @@ class Params:
     initial_feasible_target: int | None = None
     initialization: str = 'constructive'
     search_seconds: float | None = None
+    initialization_seconds: float | None = 120.0
     initial_checks: int = 30000
     repair_checks: int = 10000
     initial_backtracks: int = 3
@@ -45,7 +46,7 @@ class Params:
     exploration: float = 0.05
     dominance_reward: float = 0.3
     hv_margin: float = 0.1
-    model_version: str = 'symmetric-chebyshev-uploaded-only-v6'
+    model_version: str = 'symmetric-chebyshev-scheduled-repair-v7'
 
     @property
     def coupling_discount(self):
@@ -83,6 +84,6 @@ class Params:
             raise ValueError('Unknown initialization/repair policy')
         if self.initial_relief_reserve < 0 or (self.initial_feasible_target is not None and self.initial_feasible_target < 1):
             raise ValueError('Invalid legacy initialization setting')
-        for value in (self.subproblem_seconds, self.repair_seconds, self.search_seconds):
+        for value in (self.subproblem_seconds, self.repair_seconds, self.search_seconds, self.initialization_seconds):
             if value is not None and value <= 0:
                 raise ValueError('Invalid solve time limit')

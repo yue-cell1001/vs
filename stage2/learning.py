@@ -1,7 +1,7 @@
 from copy import deepcopy
 from math import isfinite, isclose
 
-ACTIONS = tuple((d, r) for d in range(5) for r in range(3) if d != 4 or r == 2)
+ACTIONS = tuple((d, r) for d in range(5) for r in range(3))
 
 
 class Automaton:
@@ -67,3 +67,57 @@ class Automaton:
         self.probabilities = list(probabilities)
         self.selections = list(selections)
         self.rewards = list(rewards)
+
+
+class AdaptiveAutomaton(Automaton):
+    def __init__(self, actions=ACTIONS, rate=0.1, exploration=0.05):
+        super().__init__(actions, rate, exploration)
+        self.state_probabilities = [self.probabilities[:] for _ in range(3)]
+        self.failures = []
+        self.no_gain = 0
+        self.last_state = 0
+
+    def state(self):
+        if self.failures and sum(self.failures) / len(self.failures) >= .6:
+            return 1
+        return 2 if self.no_gain >= 40 else 0
+
+    def choose(self, rng, available=None):
+        self.last_state = self.state()
+        self.probabilities = self.state_probabilities[self.last_state]
+        original = self.exploration
+        self.exploration = (original, max(original, .25), max(original, .2))[self.last_state]
+        try:
+            return super().choose(rng, available)
+        finally:
+            self.exploration = original
+
+    def feedback(self, action, reward, feasible=True, hv_gain=0):
+        super().feedback(action, reward)
+        self.state_probabilities[self.last_state] = self.probabilities[:]
+        self.failures = (self.failures + [not feasible])[-30:]
+        self.no_gain = 0 if hv_gain > 1e-15 else self.no_gain + 1
+
+    def snapshot(self):
+        result = super().snapshot()
+        result.update(schema='adaptive-lri-v1', state_probabilities=deepcopy(self.state_probabilities),
+                      failures=self.failures[:], no_gain=self.no_gain, last_state=self.last_state)
+        return result
+
+    def restore(self, state):
+        if state.get('schema') != 'adaptive-lri-v1':
+            raise ValueError('Checkpoint uses a different learning algorithm')
+        matrices = state.get('state_probabilities', [])
+        if len(matrices) != 3 or state.get('last_state') not in (0, 1, 2):
+            raise ValueError('Invalid adaptive learning checkpoint')
+        for row in matrices:
+            super().restore({**state, 'schema': 'unified-lri-v1', 'probabilities': row})
+        super().restore({**state, 'schema': 'unified-lri-v1'})
+        if (len(state['failures']) > 30 or any(type(v) is not bool for v in state['failures'])
+                or type(state['no_gain']) is not int or state['no_gain'] < 0
+                or self.probabilities != matrices[state['last_state']]):
+            raise ValueError('Invalid adaptive learning history')
+        self.state_probabilities = deepcopy(matrices)
+        self.failures = state['failures'][:]
+        self.no_gain = state['no_gain']
+        self.last_state = state['last_state']

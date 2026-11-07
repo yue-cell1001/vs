@@ -53,16 +53,15 @@ class InitialConstructionTests(unittest.TestCase):
         self.assertEqual(len(result.services), 9)
         self.assertEqual({pid for e in plan for pid, pickup in e.events if pickup}, {100, 101})
 
-    def test_initialization_does_not_replace_preserved_repair_construction(self):
+    def test_scheduled_construction_and_repair_share_prechecked_path_structure(self):
         import random
-        from unittest.mock import patch
-        from stage2.initialization import construct, _construct_preserved_repair
+        from stage2.initialization import construct
+        from stage2.constructive_repair import compatible
         n, p, table = scenario(ordinary=1, drt=1)
         decoder = Decoder(n, table, p)
-        with patch('stage2.initialization._construct_preserved_repair', wraps=_construct_preserved_repair) as original, patch('stage2.initialization.draft_check', side_effect=AssertionError('New draft checks are initialization only')):
-            plan = construct(decoder, 0, random.Random(p.seed), pending=[100])
-        self.assertEqual(original.call_count, 1)
-        self.assertTrue(all(not e.target for e in plan))
+        plan = construct(decoder, 0, random.Random(p.seed), pending=[100])
+        self.assertTrue(compatible(decoder, plan))
+        self.assertTrue(all(e.target in decoder.nominal_trips for e in plan))
         self.assertFalse(decoder.decode(plan, {100}, audit=True).errors)
 
     def test_initialization_records_failed_construction_time_and_keeps_trying(self):

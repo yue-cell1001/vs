@@ -31,10 +31,10 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(p1.candidates, 20)
         self.assertEqual(p2.max_coupling_wait, 10)
         self.assertEqual((p2.learning_rate, p2.exploration, p2.dominance_reward, p2.hv_margin), (.1, .05, .3, .1))
-        self.assertEqual(len(ACTIONS), 13)
-        self.assertNotIn((4, 0), ACTIONS)
-        self.assertNotIn((4, 1), ACTIONS)
-        self.assertEqual(Automaton().probabilities, [1 / 13] * 13)
+        self.assertEqual(len(ACTIONS), 15)
+        self.assertIn((4, 0), ACTIONS)
+        self.assertIn((4, 1), ACTIONS)
+        self.assertEqual(Automaton().probabilities, [1 / 15] * 15)
 
     def test_reference_formation_uses_point_eight_not_point_nine(self):
         n = network([Passenger(i, 0, 3, 0, 0, 100, 'A') for i in range(10)])

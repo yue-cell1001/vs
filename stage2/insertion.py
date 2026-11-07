@@ -201,32 +201,36 @@ def original_line_rejoins(decoder,candidate,pid):
     return True
 
 
-def insert(decoder,excursions,pid,rule,rng):
-    required={q for e in excursions for q,_ in e.events}|{pid}
-    decoder.preference=0 if rule==0 else 1
-    choices=[]; seen=set()
-    preferred=[]
-    for candidate in options(decoder,excursions,pid,True):
-        if candidate in seen: continue
+def insert(decoder, excursions, pid, rule, rng):
+    required = {q for e in excursions for q, _ in e.events} | {pid}
+    decoder.preference = 0
+    choices = []
+    seen = set()
+    preferred = []
+    for candidate in options(decoder, excursions, pid, True):
+        if candidate in seen:
+            continue
         seen.add(candidate)
-        for preference in ((rule,) if rule in (0,1) else (0,1)):
-            decoder.preference=preference
-            solution=decoder.decode(candidate,required)
-            if solution.errors: continue
-            if rule==3 and original_line_rejoins(decoder,candidate,pid):
+        for preference in (0,):
+            decoder.preference = preference
+            solution = decoder.decode(candidate, required)
+            if solution.errors:
+                continue
+            if rule == 3 and original_line_rejoins(decoder, candidate, pid):
                 preferred.append(solution)
-            if rule in (0,1):
-                if not choices or (solution.objectives[rule],solution.objectives[1-rule])<(choices[0].objectives[rule],choices[0].objectives[1-rule]): choices=[solution]
-            else:
-                from common.pareto import dominates
-                if any(dominates(s.objectives,solution.objectives) for s in choices): continue
-                choices=[s for s in choices if not dominates(solution.objectives,s.objectives)]+[solution]
-    if not choices and rule!=3: return insert(decoder,excursions,pid,3,rng)
-    if not choices: return None
-    if rule in (0,1): return choices[0]
-    if rule==3 and preferred:
-        indices=fronts([s.objectives for s in preferred])[0]
-        choices=[preferred[i] for i in indices]
-    cd=crowding([s.objectives for s in choices])
-    winner=max(range(len(choices)),key=lambda i:(cd[i],rng.random()))
+            from common.pareto import dominates
+            if any((dominates(s.objectives, solution.objectives) for s in choices)):
+                continue
+            choices = [s for s in choices if not dominates(solution.objectives, s.objectives)] + [solution]
+            if rule == 0:
+                return solution
+    if not choices and rule != 3:
+        return insert(decoder, excursions, pid, 3, rng)
+    if not choices:
+        return None
+    if rule == 3 and preferred:
+        indices = fronts([s.objectives for s in preferred])[0]
+        choices = [preferred[i] for i in indices]
+    cd = crowding([s.objectives for s in choices])
+    winner = max(range(len(choices)), key=lambda i: (cd[i], rng.random()))
     return choices[winner]

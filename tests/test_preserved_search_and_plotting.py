@@ -15,16 +15,14 @@ from tests.fixtures import scenario
 
 
 class PreservedSearchAndPlottingTests(unittest.TestCase):
-    def test_original_repair_retry_order_is_preserved(self):
+    def test_matching_repair_attempts_only_selected_strategy(self):
         n, p, table = scenario(ordinary=1, drt=1)
         decoder = Decoder(n, table, p)
-        plan = construct(decoder, 0, random.Random(p.seed), lambda _: None)
-        with patch('stage2.constructive_repair.construct', side_effect=[Infeasible('first'), Infeasible('second'), plan]) as build:
+        with patch('stage2.constructive_repair.construct', side_effect=Infeasible('Rejected')) as build:
             solution, failure = repair(decoder, (), [100], 2, random.Random(p.seed))
-        self.assertIsNone(failure)
-        self.assertFalse(solution.errors)
-        self.assertEqual([c.args[1] for c in build.call_args_list], [2, 0, 1])
-        self.assertEqual(solution.metadata['constructive_repair_rule'], 1)
+        self.assertIsNone(solution)
+        self.assertIsNotNone(failure)
+        self.assertEqual([c.args[1] for c in build.call_args_list], [2])
 
     def test_plot_once_per_timetable_only_after_all_searches_finish(self):
         from stage2.main import main

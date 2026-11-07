@@ -27,6 +27,7 @@ def main():
     parser.add_argument('--iterations', type=int, default=200)
     parser.add_argument('--subproblem-seconds', type=float, default=Params().subproblem_seconds)
     parser.add_argument('--repair-seconds', type=float, default=Params().repair_seconds)
+    parser.add_argument('--initialization-seconds', type=float, default=Params().initialization_seconds)
     parser.add_argument('--initialization', choices=('constructive', 'insertion'), default='constructive')
     parser.add_argument('--repair-mode', choices=('constructive', 'exhaustive'), default='constructive')
     parser.add_argument('--initial-solutions', type=int, default=Params().initial_solutions)
@@ -50,7 +51,7 @@ def main():
     start = monotonic()
     root = Path(args.output)
     root.mkdir(parents=True, exist_ok=True)
-    p = Params(iterations=args.iterations, subproblem_seconds=args.subproblem_seconds, repair_seconds=args.repair_seconds, seed=args.seed, capacity=args.capacity, purchase_cost=args.purchase_cost, operating_cost=args.operating_cost, initialization=args.initialization, repair_mode=args.repair_mode, initial_solutions=args.initial_solutions, initial_feasible_target=args.initial_feasible_target, search_seconds=args.search_seconds, stall=args.stall)
+    p = Params(initialization_seconds=args.initialization_seconds, iterations=args.iterations, subproblem_seconds=args.subproblem_seconds, repair_seconds=args.repair_seconds, seed=args.seed, capacity=args.capacity, purchase_cost=args.purchase_cost, operating_cost=args.operating_cost, initialization=args.initialization, repair_mode=args.repair_mode, initial_solutions=args.initial_solutions, initial_feasible_target=args.initial_feasible_target, search_seconds=args.search_seconds, stall=args.stall)
     net = load_network(args.data)
     candidates = json.loads(Path(args.timetables).read_text(encoding='utf-8'))
     if isinstance(candidates, dict):

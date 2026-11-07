@@ -59,7 +59,7 @@ class BoundedRepairTests(unittest.TestCase):
     def test_failed_uploaded_initialization_never_calls_original_constructor(self):
         from stage2.alns import NoFeasibleSolution
         n, p, table = scenario()
-        with patch('stage2.initialization.construct', side_effect=Infeasible('Uploaded construction rejected')) as uploaded, patch('stage2.initialization._construct_preserved_repair', side_effect=AssertionError('Original initialization must not run')) as original:
+        with patch('stage2.initialization.construct', side_effect=Infeasible('Uploaded construction rejected')) as uploaded, patch('stage2.initialization._construct_preserved_repair', side_effect=AssertionError('Original initialization must not run'), create=True) as original:
             with self.assertRaises(NoFeasibleSolution) as caught:
                 solve(n, table, replace(p, iterations=0), progress=lambda _: None)
         self.assertEqual(uploaded.call_count, 1)

@@ -28,14 +28,14 @@ class MultiobjectiveTests(unittest.TestCase):
 
     def test_unified_learning_and_exact_reward_inaction(self):
         a = Automaton()
-        self.assertEqual(len(a.actions), 13)
-        self.assertEqual(a.probabilities, [1 / 13] * 13)
+        self.assertEqual(len(a.actions), 15)
+        self.assertEqual(a.probabilities, [1 / 15] * 15)
         before = a.probabilities[:]
         a.feedback((0, 0), 0)
         self.assertEqual(a.probabilities, before)
         a.feedback((1, 0), 0.3)
         for i, value in enumerate(a.probabilities):
-            self.assertAlmostEqual(value, .97 / 13 + (.03 if a.actions[i] == (1, 0) else 0))
+            self.assertAlmostEqual(value, .97 / 15 + (.03 if a.actions[i] == (1, 0) else 0))
         self.assertAlmostEqual(sum(a.probabilities), 1)
 
     def test_available_action_and_snapshot(self):
@@ -62,7 +62,7 @@ class MultiobjectiveTests(unittest.TestCase):
         self.assertGreaterEqual(a.sampling_probabilities()[1], .05 / 2)
         self.assertLess(a.probabilities[1], .001)
         with self.assertRaises(ValueError):
-            a.restore({'probabilities': [[1 / 13] * 13] * 3})
+            a.restore({'probabilities': [[1 / 15] * 15] * 3})
 
     def test_event_cycle_rejected_and_visits_distinct(self):
         g = EventNetwork()
