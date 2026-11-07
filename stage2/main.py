@@ -26,7 +26,7 @@ def main():
     parser.add_argument('--output', default='results/stage2')
     parser.add_argument('--iterations', type=int, default=200)
     parser.add_argument('--subproblem-seconds', type=float, default=Params().subproblem_seconds)
-    parser.add_argument('--repair-seconds', type=float)
+    parser.add_argument('--repair-seconds', type=float, default=Params().repair_seconds)
     parser.add_argument('--initialization', choices=('constructive', 'insertion'), default='constructive')
     parser.add_argument('--repair-mode', choices=('constructive', 'exhaustive'), default='constructive')
     parser.add_argument('--initial-solutions', type=int, default=Params().initial_solutions)
@@ -146,6 +146,7 @@ def main():
             except NoFeasibleSolution as error:
                 failures.append({'timetable': k, 'error': str(error), **error.diagnostics})
                 _write(folder / 'failure.json', failures[-1])
+                print(f'Timetable {k + 1}: initialization failed; skipped search; see {folder / "failure.json"}', flush=True)
                 processed = k + 1
             else:
                 export(solutions, net, cp, folder, {'timetable_index': k, 'phase': 'completed', 'search': stat}, tables=False)

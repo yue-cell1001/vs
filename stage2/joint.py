@@ -204,7 +204,14 @@ class JointOptimizer:
         problem = build_problem(costs1, costs2, constant, lower, upper, matrix,
                                 rows.lower, rows.upper, seed, self.objective_scales, self.tradeoff_weights)
         cost, lo, hi, full, lb, ub, warm, integrality, weights = problem
-        result = solve_integer(cost, lo, hi, full, lb, ub, p.subproblem_seconds, warm, integrality=integrality)
+        from .budget import check
+        from time import monotonic
+        check(self)
+        seconds = p.subproblem_seconds
+        if getattr(self, 'deadline', None) is not None:
+            remaining = self.deadline - monotonic()
+            seconds = min(seconds, remaining) if seconds is not None else remaining
+        result = solve_integer(cost, lo, hi, full, lb, ub, seconds, warm, integrality=integrality)
         self.solves += 1
         if result.x is None:
             raise Infeasible(f'Joint integer allocation: {result.message}; no verified incumbent')

@@ -36,12 +36,15 @@ class Settings:
     evaluation_budget: int = 0
     seed: int = 2026
     subproblem_seconds: float | None = Stage2Params().subproblem_seconds
+    repair_seconds: float | None = Stage2Params().repair_seconds
 
     def __post_init__(self):
         if not self.capacities or len(set(self.capacities)) != len(self.capacities) or any(q not in CAPACITIES for q in self.capacities):
             raise ValueError('Capacities must be distinct members of 4,5,6,7,8')
         if self.iterations < 1 or self.population < 2 or min(self.generations, self.evaluation_budget) < 0:
             raise ValueError('Invalid search budget')
+        if self.repair_seconds is not None and (not math.isfinite(self.repair_seconds) or self.repair_seconds <= 0):
+            raise ValueError('Invalid repair time limit')
         if self.subproblem_seconds is not None and (not math.isfinite(self.subproblem_seconds) or self.subproblem_seconds <= 0):
             raise ValueError('Invalid integer subproblem time limit')
 
@@ -59,7 +62,7 @@ class Settings:
         purchase, operating = self.costs(capacity)
         return Stage2Params(capacity=capacity, purchase_cost=purchase, operating_cost=operating,
                             iterations=self.iterations, seed=self.seed,
-                            subproblem_seconds=self.subproblem_seconds)
+                            subproblem_seconds=self.subproblem_seconds, repair_seconds=self.repair_seconds)
 
 
 def write_json(path, value):
@@ -183,6 +186,8 @@ def stage2_command(settings, capacity, data, folder, bounds_file, resume):
                '--seed', str(settings.seed), '--objective-bounds', str(bounds_file), '--no-reports']
     if settings.subproblem_seconds is not None:
         command += ['--subproblem-seconds', str(settings.subproblem_seconds)]
+    if settings.repair_seconds is not None:
+        command += ['--repair-seconds', str(settings.repair_seconds)]
     if resume:
         command += ['--resume', '--retry-failed']
     return command
@@ -521,6 +526,7 @@ def main():
     parser.add_argument('--generations', type=int, default=Stage1Params().generations)
     parser.add_argument('--evaluation-budget', type=int, default=0)
     parser.add_argument('--subproblem-seconds', type=float, default=Stage2Params().subproblem_seconds)
+    parser.add_argument('--repair-seconds', type=float, default=Stage2Params().repair_seconds)
     parser.add_argument('--seed', type=int, default=2026)
     parser.add_argument('--workers', type=int, choices=range(1, 6), default=2)
     parser.add_argument('--resume', action='store_true')
@@ -535,7 +541,7 @@ def main():
         settings = Settings(capacities=tuple(args.capacities), iterations=args.iterations,
                             population=args.population, generations=args.generations,
                             evaluation_budget=args.evaluation_budget, seed=args.seed,
-                            subproblem_seconds=args.subproblem_seconds)
+                            subproblem_seconds=args.subproblem_seconds, repair_seconds=args.repair_seconds)
     report = run(settings, args.data, args.output, args.resume, args.report_only, workers=args.workers)
     print('Recommended capacity:', report['recommended_capacity'], flush=True)
     print('Report:', args.output / 'analysis.md', flush=True)

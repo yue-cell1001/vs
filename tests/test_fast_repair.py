@@ -38,7 +38,7 @@ class FastRepairTests(unittest.TestCase):
             decoder.preference = 1
             third = decoder.decode((), set(), audit=True)
             self.assertFalse(third.errors)
-            self.assertEqual(solve.call_count, 2)
+            self.assertEqual(solve.call_count, 1)
 
     def test_repair_preserves_existing_drt_transfer_and_adds_pending_request(self):
         from dataclasses import replace

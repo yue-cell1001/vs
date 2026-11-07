@@ -46,18 +46,21 @@ class Decoder:
         if required is None:
             required = {pid for e in excursions for pid, _ in e.events}
         required = set(required)
-        cache_key = (tuple(excursions), frozenset(required), self.preference, tuple(self.tradeoff_weights), tuple(self.objective_scales) if self.objective_scales is not None else None, bool(audit), bool(getattr(self.optimizer, 'verify_only', False)))
+        cache_key = (tuple(excursions), frozenset(required), tuple(self.tradeoff_weights), tuple(self.objective_scales) if self.objective_scales is not None else None, bool(audit), bool(getattr(self.optimizer, 'verify_only', False)))
         try:
             context = self.context(excursions)
             self.trips, self.base = (context.trips, context.base)
-            if audit and cache_key in self.decode_cache:
+            if cache_key in self.decode_cache:
                 self.decode_cache_hits += 1
-                return deepcopy(self.decode_cache[cache_key])
+                cached = deepcopy(self.decode_cache[cache_key])
+                cached.metadata['allocation_preference'] = self.preference
+                return cached
             duties = context.duties
             operations = context.operations
             if self.objective_scales is not None:
                 self.optimizer.objective_scales = tuple(self.objective_scales)
             self.optimizer.tradeoff_weights = tuple(self.tradeoff_weights)
+            self.optimizer.deadline = getattr(self, 'deadline', None)
             solution = self.optimizer.solve(duties, self.trips, excursions, required, self.preference)
             solution.metadata['allocation_preference'] = self.preference
             solution.metadata['timetable'] = self.timetable
@@ -72,10 +75,9 @@ class Decoder:
             numeric = solution.metadata['joint_solver']
             if abs(solution.objectives[0] - numeric['F1_linear']) > 1e-05 or abs(solution.objectives[1] - numeric['F2_linear']) > 1e-05:
                 raise Infeasible('Joint integer model / physical objective mismatch')
-            if audit:
-                self.decode_cache[cache_key] = deepcopy(solution)
-                if len(self.decode_cache) > 4:
-                    self.decode_cache.pop(next(iter(self.decode_cache)))
+            self.decode_cache[cache_key] = deepcopy(solution)
+            if len(self.decode_cache) > 4:
+                self.decode_cache.pop(next(iter(self.decode_cache)))
             return solution
         except Infeasible as error:
             return Solution({}, {}, tuple(excursions), errors=[str(error)])

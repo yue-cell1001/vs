@@ -106,16 +106,19 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                 initialization_decode_seconds += elapsed
                 progress(f'  Initial joint allocation finished in {elapsed:.2f} seconds')
 
-        def initial_construct(rule):
+        def initial_construct(rule, fallback=False):
             nonlocal initialization_construction_seconds
             from .initialization import construct
             before = monotonic()
             try:
+                if fallback:
+                    from .initialization import _construct_preserved_repair
+                    return _construct_preserved_repair(decoder, rule, rng, progress, pending={q.id for q in requests})
                 return construct(decoder, rule, rng, progress)
             finally:
                 elapsed = monotonic() - before
                 initialization_construction_seconds += elapsed
-                initialization_attempts.append({'rule': rule, 'construction_seconds': elapsed, 'statistics': dict(getattr(decoder, 'initialization_stats', {}))})
+                initialization_attempts.append({'rule': rule, 'strategy': 'original_fallback' if fallback else 'uploaded', 'construction_seconds': elapsed, 'statistics': {} if fallback else dict(getattr(decoder, 'initialization_stats', {}))})
                 progress(f'  Initial route construction finished in {elapsed:.2f} seconds')
 
         requests = sorted((x for x in net.passengers if x.kind), key=lambda x: (x.latest, x.id))
@@ -172,6 +175,19 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                     initial.errors=validate(initial,net,decoder.trips,p)
                     archive.add(initial)
 
+        if not archive.items and p.initial_fallback and p.initialization == 'constructive':
+            progress('  Uploaded initialization failed; trying original construction once')
+            try:
+                decisions = initial_construct(0, fallback=True)
+                candidate = initial_decode(decisions, {q.id for q in requests}, audit=True)
+                if candidate.errors:
+                    failures.append({'fallback': 'original', 'errors': candidate.errors})
+                else:
+                    candidate.metadata['initial_fallback'] = 'original'
+                    archive.add(candidate)
+            except Infeasible as error:
+                failures.append({'fallback': 'original', 'errors': [str(error)]})
+
         if not archive.items:
             raise NoFeasibleSolution(f'No complete feasible initial schedule; {failures}. No requests were silently dropped. This initialization failure is not a timetable infeasibility proof; try other initial strategies or diagnose fixed-path capacity.', {'initialization_elapsed_seconds': monotonic() - start, 'initialization_construction_seconds': initialization_construction_seconds, 'initialization_decode_seconds': initialization_decode_seconds, 'initialization_attempts': initialization_attempts, 'initial_failures': failures})
         for candidate in archive.items:
@@ -203,6 +219,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
         decoder = Decoder(net, current.metadata['timetable'], p)
         decoder.upper = upper
         decoder.objective_scales = allocation_scales
+        iteration_deadline = before + p.repair_seconds if p.repair_seconds else None
         partial, pending = destroy(decoder, current, d, rng)
         rng.shuffle(pending)
         trial = None
@@ -216,9 +233,12 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
             local = Decoder(net, table, p)
             local.objective_scales = allocation_scales
             local.tradeoff_weights = rng.choice(DIRECTIONS)
-            local.deadline = monotonic() + p.repair_seconds if p.repair_seconds else None
+            local.deadline = iteration_deadline
             if search_deadline is not None:
                 local.deadline = min(local.deadline or search_deadline, search_deadline)
+            from .constructive_repair import compatible
+            backend = 'constructive' if p.repair_mode == 'constructive' and compatible(local, partial) else 'exhaustive'
+            progress(f'  repair={backend}, pending={len(pending)}, budget={p.repair_seconds}s')
             try:
                 trial, failed = repair(local, partial, pending, r, rng)
             except (Infeasible, SearchTimeout) as error:
@@ -249,7 +269,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                 checkpoint([trial], {'phase': 'iteration_candidate', 'iteration': iteration + 1})
         learner.feedback(action, reward)
         stall = 0 if retained else stall + 1
-        trace.append({'iteration': iteration + 1, 'hv': hypervolume([s.objectives for s in archive.items], upper, p.hv_margin), 'action': action, 'reward': reward, 'hv_gain': gain, 'pareto_improvement': improvement, 'repair_complete': trial is not None, 'retained': retained, 'served': len(trial.services) if trial else 0, 'trial_objectives': trial.objectives if trial else None, 'before_objectives': current.objectives, 'failed_request': failed, 'destroyed_requests': pending, 'decode_calls': decode_calls, 'tradeoff_weights': list(local.tradeoff_weights) if validate_branch(table, timetable, p) else None, 'elapsed_seconds': monotonic() - before})
+        trace.append({'iteration': iteration + 1, 'hv': hypervolume([s.objectives for s in archive.items], upper, p.hv_margin), 'action': action, 'reward': reward, 'hv_gain': gain, 'pareto_improvement': improvement, 'repair_complete': trial is not None, 'retained': retained, 'served': len(trial.services) if trial else 0, 'trial_objectives': trial.objectives if trial else None, 'before_objectives': current.objectives, 'failed_request': failed, 'destroyed_requests': pending, 'decode_calls': decode_calls, 'repair_backend': backend if validate_branch(table, timetable, p) else None, 'joint_solver_calls': local.optimizer.solves if validate_branch(table, timetable, p) else 0, 'decode_cache_hits': local.decode_cache_hits if validate_branch(table, timetable, p) else 0, 'repair_timed_out': isinstance(failed, str) and 'time budget' in failed.lower(), 'tradeoff_weights': list(local.tradeoff_weights) if validate_branch(table, timetable, p) else None, 'elapsed_seconds': monotonic() - before})
         if checkpoint:
             checkpoint(archive.items, {'phase': 'search', 'iteration': iteration + 1, 'state': state(iteration + 1)})
         progress(f'iteration {iteration + 1}/{p.iterations}: feasible={trial is not None}, reward={reward:.6g}, archive={len(archive.items)}, elapsed={trace[-1]["elapsed_seconds"]:.2f}s')
