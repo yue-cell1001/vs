@@ -22,7 +22,7 @@ class CapacitySensitivityTests(unittest.TestCase):
     def test_defaults_and_exact_linear_prices(self):
         settings = study.Settings()
         self.assertEqual(settings.capacities, (4, 5, 6, 7, 8))
-        self.assertEqual(settings.iterations, 20)
+        self.assertEqual(settings.iterations, 10)
         self.assertEqual((settings.population, settings.generations), (64, 200))
         for q in settings.capacities:
             purchase, operating = settings.costs(q)
@@ -41,7 +41,7 @@ class CapacitySensitivityTests(unittest.TestCase):
         settings = study.Settings(subproblem_seconds=30)
         folder = Path('/tmp/example')
         command = study.stage2_command(settings, 5, Path('/tmp/data'), folder, Path('/tmp/bounds.json'), True)
-        self.assertEqual(command[command.index('--iterations') + 1], '20')
+        self.assertEqual(command[command.index('--iterations') + 1], '10')
         self.assertEqual(command[command.index('--capacity') + 1], '5')
         self.assertIn('--no-reports', command)
         self.assertIn('--resume', command)

@@ -30,7 +30,7 @@ CAPACITIES = (4, 5, 6, 7, 8)
 @dataclass(frozen=True)
 class Settings:
     capacities: tuple = CAPACITIES
-    iterations: int = 20
+    iterations: int = 10
     population: int = Stage1Params().population
     generations: int = Stage1Params().generations
     evaluation_budget: int = 0
@@ -516,7 +516,7 @@ def main():
     parser.add_argument('--data', type=Path, default=PROJECT / 'data')
     parser.add_argument('--output', type=Path, default=PROJECT / 'results/capacity_sensitivity')
     parser.add_argument('--capacities', type=int, nargs='+', choices=CAPACITIES, default=CAPACITIES)
-    parser.add_argument('--iterations', type=int, default=20)
+    parser.add_argument('--iterations', type=int, default=10)
     parser.add_argument('--population', type=int, default=Stage1Params().population)
     parser.add_argument('--generations', type=int, default=Stage1Params().generations)
     parser.add_argument('--evaluation-budget', type=int, default=0)
