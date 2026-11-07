@@ -88,7 +88,7 @@ class InitialConstructionTests(unittest.TestCase):
         n, p, table = scenario()
         with patch('stage2.initialization.construct', side_effect=Infeasible('Construction rejected')):
             with self.assertRaises(NoFeasibleSolution) as caught:
-                solve(n, table, replace(p, iterations=0, initial_fallback=False), progress=lambda _: None)
+                solve(n, table, replace(p, iterations=0), progress=lambda _: None)
         diagnostics = caught.exception.diagnostics
         self.assertGreater(diagnostics['initialization_elapsed_seconds'], 0)
         self.assertGreater(diagnostics['initialization_construction_seconds'], 0)

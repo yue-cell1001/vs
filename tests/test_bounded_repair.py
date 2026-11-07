@@ -56,13 +56,14 @@ class BoundedRepairTests(unittest.TestCase):
         self.assertTrue(all(not row['repair_complete'] for row in stats['trace']))
         self.assertTrue(all(not item.errors for item in items))
 
-    def test_failed_uploaded_initialization_tries_original_once_and_audits_it(self):
+    def test_failed_uploaded_initialization_never_calls_original_constructor(self):
+        from stage2.alns import NoFeasibleSolution
         n, p, table = scenario()
-        with patch('stage2.initialization.construct', side_effect=Infeasible('Uploaded construction rejected')):
-            items, stats = solve(n, table, replace(p, iterations=0), progress=lambda _: None)
-        self.assertTrue(items)
-        self.assertEqual(items[0].metadata['initial_fallback'], 'original')
-        self.assertEqual(len(stats['initialization_attempts']), 2)
-        self.assertEqual(stats['initialization_attempts'][-1]['strategy'], 'original_fallback')
-        self.assertFalse(items[0].errors)
-        self.assertEqual(len(items[0].services), 2)
+        with patch('stage2.initialization.construct', side_effect=Infeasible('Uploaded construction rejected')) as uploaded, patch('stage2.initialization._construct_preserved_repair', side_effect=AssertionError('Original initialization must not run')) as original:
+            with self.assertRaises(NoFeasibleSolution) as caught:
+                solve(n, table, replace(p, iterations=0), progress=lambda _: None)
+        self.assertEqual(uploaded.call_count, 1)
+        original.assert_not_called()
+        attempts = caught.exception.diagnostics['initialization_attempts']
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]['strategy'], 'uploaded')

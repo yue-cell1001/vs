@@ -106,19 +106,16 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                 initialization_decode_seconds += elapsed
                 progress(f'  Initial joint allocation finished in {elapsed:.2f} seconds')
 
-        def initial_construct(rule, fallback=False):
+        def initial_construct(rule):
             nonlocal initialization_construction_seconds
             from .initialization import construct
             before = monotonic()
             try:
-                if fallback:
-                    from .initialization import _construct_preserved_repair
-                    return _construct_preserved_repair(decoder, rule, rng, progress, pending={q.id for q in requests})
                 return construct(decoder, rule, rng, progress)
             finally:
                 elapsed = monotonic() - before
                 initialization_construction_seconds += elapsed
-                initialization_attempts.append({'rule': rule, 'strategy': 'original_fallback' if fallback else 'uploaded', 'construction_seconds': elapsed, 'statistics': {} if fallback else dict(getattr(decoder, 'initialization_stats', {}))})
+                initialization_attempts.append({'rule': rule, 'strategy': 'uploaded', 'construction_seconds': elapsed, 'statistics': dict(getattr(decoder, 'initialization_stats', {}))})
                 progress(f'  Initial route construction finished in {elapsed:.2f} seconds')
 
         requests = sorted((x for x in net.passengers if x.kind), key=lambda x: (x.latest, x.id))
@@ -174,19 +171,6 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                     if initial is None: initial=initial_decode((),set(),audit=True)
                     initial.errors=validate(initial,net,decoder.trips,p)
                     archive.add(initial)
-
-        if not archive.items and p.initial_fallback and p.initialization == 'constructive':
-            progress('  Uploaded initialization failed; trying original construction once')
-            try:
-                decisions = initial_construct(0, fallback=True)
-                candidate = initial_decode(decisions, {q.id for q in requests}, audit=True)
-                if candidate.errors:
-                    failures.append({'fallback': 'original', 'errors': candidate.errors})
-                else:
-                    candidate.metadata['initial_fallback'] = 'original'
-                    archive.add(candidate)
-            except Infeasible as error:
-                failures.append({'fallback': 'original', 'errors': [str(error)]})
 
         if not archive.items:
             raise NoFeasibleSolution(f'No complete feasible initial schedule; {failures}. No requests were silently dropped. This initialization failure is not a timetable infeasibility proof; try other initial strategies or diagnose fixed-path capacity.', {'initialization_elapsed_seconds': monotonic() - start, 'initialization_construction_seconds': initialization_construction_seconds, 'initialization_decode_seconds': initialization_decode_seconds, 'initialization_attempts': initialization_attempts, 'initial_failures': failures})

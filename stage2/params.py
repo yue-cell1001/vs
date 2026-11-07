@@ -20,7 +20,6 @@ class Params:
     destroy_fraction: float = 0.1
     destroy_fraction_max: float = 0.3
     initial_solutions: int = 1
-    initial_fallback: bool = True
     initial_relief_reserve: int = 2
     repair_mode: str = 'constructive'
     initial_feasible_target: int | None = None
@@ -46,7 +45,7 @@ class Params:
     exploration: float = 0.05
     dominance_reward: float = 0.3
     hv_margin: float = 0.1
-    model_version: str = 'symmetric-chebyshev-bounded-repair-v5'
+    model_version: str = 'symmetric-chebyshev-uploaded-only-v6'
 
     @property
     def coupling_discount(self):
