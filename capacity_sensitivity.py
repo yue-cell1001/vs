@@ -219,6 +219,36 @@ def prepare_case(settings, capacity, data, folder, net, executor):
     return objective_bounds(net, tables, settings.stage2(capacity))[0]
 
 
+def reuse_first_stage(settings, data, source, destination, net):
+    source, destination = Path(source).resolve(), Path(destination).resolve()
+    if source == destination:
+        raise ValueError('Use a new output directory when reusing first-stage results')
+    manifest = read_json(source / 'configuration.json', {})
+    if manifest.get('data_fingerprint') != fingerprint(data):
+        raise ValueError('Saved first-stage data fingerprint is missing or does not match')
+    bundles = []
+    for capacity in settings.capacities:
+        folder = source / f'capacity_{capacity}'
+        report = read_json(folder / 'stage1_run.json', {})
+        if report.get('parameters') != canonical(asdict(settings.stage1(capacity))):
+            raise ValueError(f'Capacity {capacity}: saved first-stage parameters do not match')
+        tables = read_json(folder / 'stage1.json')
+        if not isinstance(tables, list) or not 0 < len(tables) <= settings.stage1(capacity).candidates:
+            raise ValueError(f'Capacity {capacity}: missing or invalid first-stage timetables')
+        if any(violations(item['timetable'], net, settings.stage1(capacity)) for item in tables):
+            raise ValueError(f'Capacity {capacity}: illegal saved first-stage timetable')
+        if not math.isfinite(report.get('elapsed_seconds', -1)) or report.get('elapsed_seconds', -1) < 0:
+            raise ValueError(f'Capacity {capacity}: invalid first-stage timing record')
+        bundles.append((capacity, tables, report))
+    for capacity, tables, report in bundles:
+        folder = destination / f'capacity_{capacity}'
+        write_json(folder / 'stage1.json', tables)
+        write_json(folder / 'stage1_run.json', report)
+        write_json(folder / 'case.json', {'capacity': capacity, 'stage1_complete': True,
+                   'stage1_source': str(source / f'capacity_{capacity}'), 'phase': 'stage1_reused'})
+        print(f'Capacity {capacity}: reused {len(tables)} saved first-stage timetables', flush=True)
+
+
 def nondominated_rows(rows):
     unique = {}
     for row in rows:
@@ -445,7 +475,7 @@ def write_report(root, cases, settings, search_bounds, workers=1):
     return result
 
 
-def run(settings, data, output, resume=False, report_only=False, executor=execute, workers=2):
+def run(settings, data, output, resume=False, report_only=False, executor=execute, workers=2, reuse_stage1=None):
     if type(workers) is not int or not 1 <= workers <= 5:
         raise ValueError('Workers must be between 1 and 5')
     data, root = Path(data).resolve(), Path(output).resolve()
@@ -460,6 +490,10 @@ def run(settings, data, output, resume=False, report_only=False, executor=execut
             raise ValueError('Data/model/search settings changed; use identical arguments or a new output folder')
     elif any(root.iterdir()):
         raise ValueError('Output is not empty; use --resume or a new output folder')
+    if reuse_stage1 is not None:
+        if resume or report_only:
+            raise ValueError('First-stage import requires a new run, not resume or report-only')
+        reuse_first_stage(settings, data, reuse_stage1, root, net)
     write_json(root / 'configuration.json', design)
     prior = read_json(root / 'timing.json', {}).get('total_elapsed_seconds', 0)
     started = perf_counter()
@@ -529,6 +563,7 @@ def main():
     parser.add_argument('--repair-seconds', type=float, default=Stage2Params().repair_seconds)
     parser.add_argument('--seed', type=int, default=2026)
     parser.add_argument('--workers', type=int, choices=range(1, 6), default=2)
+    parser.add_argument('--reuse-stage1', type=Path)
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--report-only', action='store_true', )
     args = parser.parse_args()
@@ -542,7 +577,7 @@ def main():
                             population=args.population, generations=args.generations,
                             evaluation_budget=args.evaluation_budget, seed=args.seed,
                             subproblem_seconds=args.subproblem_seconds, repair_seconds=args.repair_seconds)
-    report = run(settings, args.data, args.output, args.resume, args.report_only, workers=args.workers)
+    report = run(settings, args.data, args.output, args.resume, args.report_only, workers=args.workers, reuse_stage1=args.reuse_stage1)
     print('Recommended capacity:', report['recommended_capacity'], flush=True)
     print('Report:', args.output / 'analysis.md', flush=True)
     print('Figure:', args.output / 'capacity_pareto_front.png', flush=True)
