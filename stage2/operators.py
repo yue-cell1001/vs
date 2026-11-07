@@ -1,6 +1,6 @@
 from math import ceil
 NAMES_DESTROY = ('random', 'related', 'marginal', 'chain', 'timing')
-NAMES_REPAIR = ('greedy_pareto', 'regret2', 'synchronization')
+NAMES_REPAIR = ('greedy_first_feasible', 'urgent_first_feasible', 'synchronization_first_feasible')
 
 def remove(excursions,ids,drop_sources=()):
 

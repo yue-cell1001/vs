@@ -1,5 +1,4 @@
 from dataclasses import replace
-from math import inf
 from common.model import Excursion
 from common.timetable import make_trips
 from .routing import Infeasible
@@ -161,11 +160,11 @@ def draft_check(decoder, plan):
     return trips
 
 def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
-    from itertools import islice
     from .budget import check
     net, p = (decoder.net, decoder.p)
     people = decoder.people
     initial_mode = pending is None
+    pending_order = list(pending) if pending is not None else []
     plan = list(initial)
     checks = 0
     budget = p.initial_checks if initial_mode else p.repair_checks
@@ -194,12 +193,17 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
             plan = list(remove(plan, {q for q, _ in invalid.events}))
             pending.update(old - {q for e in plan for q, _ in e.events})
     requests = sorted((q for q in net.passengers if q.kind and (pending is None or q.id in pending)), key=lambda q: (q.latest, q.id))
+    if not initial_mode and rule == 0:
+        order = {pid: i for i, pid in enumerate(pending_order)}
+        requests.sort(key=lambda q: (order.get(q.id, len(order)), q.latest, q.id))
+    elif not initial_mode and rule == 1:
+        requests.sort(key=lambda q: (q.latest, q.latest - q.earliest, q.id))
 
     def offers(person):
         nonlocal checks
         nominal = decoder.nominal_trips
 
-        def endings(e, base, pos, old=None):
+        def endings(e, base, pos):
             nonlocal checks
             ops = operations(net, nominal, base)
             trips, _ = cached_trips(decoder, ops)
@@ -262,22 +266,18 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
                     draft_check(decoder, trial)
                 except Infeasible:
                     continue
-                baseline_distance, baseline_wait = old or (0.0, 0.0)
-                yield ((0.0 if old is not None else p.purchase_cost) + p.operating_cost * (distance - baseline_distance), waiting - baseline_wait, tuple(trial))
+                yield tuple(trial)
         for pos, e in enumerate(plan):
             if not e.events:
                 continue
             base = plan[:pos] + plan[pos + 1:]
-            old_trips, _ = cached_trips(decoder, operations(net, nominal, plan))
-            previous = sequence(net, people, e.events, old_trips[e.split_trip].visits[e.split], p)
-            old = (previous[0] + net.distance(previous[2], old_trips[e.target].visits[e.join].node), previous[1]) if previous else (0.0, 0.0)
             for a in range(len(e.events) + 1):
                 for b in range(a + 1, len(e.events) + 2):
                     check(decoder)
                     events = list(e.events)
                     events.insert(a, (person.id, True))
                     events.insert(b, (person.id, False))
-                    yield from endings(replace(e, events=tuple(events)), base, pos, old)
+                    yield from endings(replace(e, events=tuple(events)), base, pos)
         ops = operations(net, nominal, plan)
         trips, _ = cached_trips(decoder, ops)
         occupied = {}
@@ -303,29 +303,13 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
     index = 0
     backtracks = 0
     history = []
-    skips = {}
     blocked_orders = {}
     while index < len(requests):
         decoder.last_construction = {'orders_inserted': index, 'orders_total': len(requests), 'insertion_checks': checks, 'local_backtracks': backtracks}
         q = requests[index]
         check(decoder)
-        count = 1 if initial_mode else 6
-        if not initial_mode and rule == 1:
-            priorities = []
-            scale = getattr(decoder, 'scales', (1.0, 1.0))
-            for position in range(index, len(requests)):
-                alternatives = list(islice(offers(requests[position]), 6))
-                nd = [c for c in alternatives if not any((all((a <= b for a, b in zip(o[:2], c[:2]))) and any((a < b for a, b in zip(o[:2], c[:2]))) for o in alternatives))]
-                nd.sort(key=lambda c: max((max(0.0, c[i]) / scale[i] for i in (0, 1))))
-                scores = [max((max(0.0, c[i]) / scale[i] for i in (0, 1))) for c in nd]
-                regret = inf if len(scores) <= 1 else scores[1] - scores[0]
-                priorities.append((regret, -position, position, nd))
-            _, _, position, candidates = max(priorities, key=lambda x: x[:2])
-            requests[index], requests[position] = (requests[position], requests[index])
-            q = requests[index]
-        else:
-            candidates = list(islice(offers(q), skips.get(index, 0), skips.get(index, 0) + count))
-        if not candidates:
+        chosen = next(offers(q), None)
+        if chosen is None:
             if initial_mode and index and (backtracks < p.initial_backtracks):
                 backtracks += 1
                 attempts = blocked_orders.get(q.id, 0) + 1
@@ -336,28 +320,16 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
                 history = history[:anchor]
                 blocked = requests.pop(index)
                 requests.insert(anchor, blocked)
-                skips.clear()
                 index = anchor
                 progress(f'  Reorder {width} recent orders; prioritize DRT {q.id}; repair {backtracks}/{p.initial_backtracks}')
                 continue
             raise Infeasible(f'Constructive insertion failed for DRT {q.id}; {index} requests inserted; {checks} checks, {backtracks} local backtracks')
         if initial_mode:
-            chosen = candidates[0]
-        else:
-            nd = [c for c in candidates if not any((all((a <= b for a, b in zip(other[:2], c[:2]))) and any((a < b for a, b in zip(other[:2], c[:2]))) for other in candidates))]
-            scale = getattr(decoder, 'scales', (1.0, 1.0))
-            if getattr(decoder, 'sample_repair_front', False):
-                groups = {}
-                for candidate in nd:
-                    groups.setdefault(candidate[:2], []).append(candidate)
-                chosen = rng.choice(groups[rng.choice(list(groups))])
-            else:
-                chosen = min(nd, key=lambda c: max((max(0.0, c[i]) / scale[i] for i in (0, 1))))
-        history.append(tuple(plan))
-        plan = list(chosen[2])
+            history.append(tuple(plan))
+        plan = list(chosen)
         index += 1
         if index % 10 == 0:
             progress(f'  Constructed {index}/{len(requests)} DRT routes')
     decoder.last_construction = {'insertion_checks': checks, 'local_backtracks': backtracks, 'orders': len(requests)}
-    decoder.initialization_stats = {'strategy': 'scheduled_first_feasible' if initial_mode else ('pareto_greedy', 'regret2', 'synchronization')[rule], 'path_checks': checks, 'backtracks': backtracks, 'inserted': len(requests), 'requests': len(requests)}
+    decoder.initialization_stats = {'strategy': 'scheduled_first_feasible' if initial_mode else ('greedy_first_feasible', 'urgent_first_feasible', 'synchronization_first_feasible')[rule], 'path_checks': checks, 'backtracks': backtracks, 'inserted': len(requests), 'requests': len(requests), 'request_order': [q.id for q in requests]}
     return tuple(plan)

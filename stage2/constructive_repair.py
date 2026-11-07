@@ -24,16 +24,14 @@ def compatible(decoder, plan):
 
 def repair(decoder, partial, pending, rule, rng):
     required = {q.id for q in decoder.net.passengers if q.kind}
-    errors = []
-    for strategy_rule in (rule,):
-        try:
-            decisions = construct(decoder, strategy_rule, rng, lambda _: None, initial=partial, pending=set(pending))
-            decoder.preference = 0
-            s = decoder.decode(decisions, required, audit=True)
-            if not s.errors:
-                s.metadata['constructive_repair_rule'] = strategy_rule
-                return (s, None)
-            errors.append({'rule': strategy_rule, 'errors': s.errors})
-        except Infeasible as error:
-            errors.append({'rule': strategy_rule, 'errors': [str(error)]})
-    return (None, {'reason': 'constructive_repair_failed', 'attempts': errors})
+    try:
+        decisions = construct(decoder, rule, rng, lambda _: None, initial=partial, pending=list(pending))
+        decoder.preference = 0
+        result = decoder.decode(decisions, required, audit=True)
+        if not result.errors:
+            result.metadata['constructive_repair_rule'] = rule
+            return result, None
+        errors = result.errors
+    except Infeasible as error:
+        errors = [str(error)]
+    return None, {'reason': 'constructive_repair_failed', 'attempts': [{'rule': rule, 'errors': errors}]}

@@ -29,6 +29,7 @@ def repair(decoder,excursions,pending,rule,rng):
         if compatible(decoder,excursions):
             try:return constructive(decoder,excursions,pending,rule,rng)
             except Infeasible as error:return None,{'reason':'constructive_repair_failed','errors':[str(error)]}
+        return None, {'reason': 'unsupported_constructive_plan'}
     working=tuple(excursions); solution=None
     if not pending:
         decoder.preference=rule if rule in (0,1) else rng.randrange(2)
@@ -209,7 +210,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
             if search_deadline is not None:
                 local.deadline = min(local.deadline or search_deadline, search_deadline)
             from .constructive_repair import compatible
-            backend = 'constructive' if p.repair_mode == 'constructive' and compatible(local, partial) else 'exhaustive'
+            backend = ('constructive' if compatible(local, partial) else 'unsupported_constructive_plan') if p.repair_mode == 'constructive' else 'exhaustive'
             progress(f'  repair={backend}, pending={len(pending)}, budget={p.repair_seconds}s')
             try:
                 trial, failed = repair(local, partial, pending, r, rng)

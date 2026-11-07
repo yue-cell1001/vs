@@ -35,7 +35,7 @@ class SimpleIterationTests(unittest.TestCase):
         self.assertFalse(stats['trace'][0]['repair_complete'])
         self.assertTrue(solutions)
 
-    def test_original_repair_preserves_deadline_order_for_both_scoring_rules(self):
+    def test_simple_repair_uses_pending_order_or_urgent_order(self):
         from stage2.initialization import sequence
         n, p, table = scenario(ordinary=1, drt=3)
         for rule in (0, 1):
@@ -48,6 +48,6 @@ class SimpleIterationTests(unittest.TestCase):
                 return sequence(*args)
             with patch('stage2.initialization.sequence', side_effect=observed), patch.object(decoder, 'decode', side_effect=AssertionError('Route construction must not run the joint model')):
                 plan = construct(decoder, rule, random.Random(p.seed), progress=lambda _: None, pending=[102, 100, 101])
-            self.assertEqual(seen, [100, 101, 102])
+            self.assertEqual(seen, [102, 100, 101] if rule == 0 else [100, 101, 102])
             result = decoder.decode(plan, {100, 101, 102}, audit=True)
             self.assertFalse(result.errors, result.errors)
