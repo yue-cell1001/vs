@@ -59,6 +59,7 @@ class InitialConstructionTests(unittest.TestCase):
         from stage2.constructive_repair import compatible
         n, p, table = scenario(ordinary=1, drt=1)
         decoder = Decoder(n, table, p)
+        decoder.allow_solo = False
         plan = construct(decoder, 0, random.Random(p.seed), pending=[100])
         self.assertTrue(compatible(decoder, plan))
         self.assertTrue(all(e.target in decoder.nominal_trips for e in plan))

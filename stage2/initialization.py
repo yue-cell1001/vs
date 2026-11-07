@@ -66,7 +66,85 @@ def cached_trips(decoder, mask):
             cache.pop(next(iter(cache)))
     return cache[mask]
 
+def protect_ordinary(decoder, trips, duties, plan):
+    from bisect import bisect_left
+    from collections import Counter
+    from .passengers import direct_duration
+    net, p = decoder.net, decoder.p
+    people = getattr(decoder, 'ordinary_construction_people', None)
+    if people is None:
+        people = {line: [] for line in net.lines}
+        for q in net.passengers:
+            if not q.kind:
+                route = net.lines[q.line]
+                people[q.line].append((route.index(q.origin), q.earliest, q.id, route.index(q.dest)))
+        for rows in people.values():
+            rows.sort()
+        decoder.ordinary_construction_people = people
+    cache = getattr(decoder, 'ordinary_construction_cache', None)
+    if cache is None:
+        cache = decoder.ordinary_construction_cache = {}
+    forced = {e.source for e in plan}
+    counts = Counter((leg.trip, leg.start, leg.end, round(leg.departure, 7)) for key in forced for leg in duties[key].legs if leg.kind == 'fixed')
+    removed = Counter(e.split_trip for e in plan)
+    for line, route in net.lines.items():
+        rows = sorted((trip for trip in trips.values() if trip.line == line), key=lambda t: int(t.id.rsplit(':', 1)[1]))
+        free = [min([p.max_formation - removed[t.id]] + [p.max_formation - counts[t.id, leg.start, leg.end, round(leg.departure, 7)] for leg in t.legs]) for t in rows]
+        signature = (line, tuple(free), tuple(tuple((v.arrival, v.departure) for v in t.visits) for t in rows))
+        if signature in cache:
+            if not cache[signature]:
+                raise Infeasible('Construction cannot preserve complete ordinary boarding')
+            continue
+        loads = [[0] * len(t.legs) for t in rows]
+        departures = [[t.visits[i].departure for t in rows] for i in range(len(route))]
+        feasible = True
+        for a, earliest, pid, b in people[line]:
+            canonical = direct_duration(net, line, route[a], route[b], p)
+            k = bisect_left(departures[a], earliest - 1e-7)
+            while k < len(rows):
+                if (rows[k].visits[b].arrival - rows[k].visits[a].departure - canonical <= p.max_detour + 1e-7
+                        and all(loads[k][i] < free[k] * p.capacity for i in range(a, b))):
+                    break
+                k += 1
+            if k == len(rows):
+                feasible = False
+                break
+            for i in range(a, b):
+                loads[k][i] += 1
+        if len(cache) >= 512:
+            cache.pop(next(iter(cache)))
+        cache[signature] = feasible
+        if not feasible:
+            raise Infeasible('Construction cannot preserve complete ordinary boarding')
+
+def continuation_check(decoder, plan):
+    from .base import build_base
+    from .routing import construct_duties
+    from .initial_capacity import CapacityGuard
+    from .initial_inventory import check_inventory
+    net, p = decoder.net, decoder.p
+    mask = operations(net, decoder.nominal_trips, plan)
+    trips, demand_cache = cached_trips(decoder, mask)
+    sources = {e.source for e in plan}
+    duties = construct_duties(net, trips, build_base(net, trips, p, sources), plan, p, operation_schedule=mask)
+    for key in sources:
+        load = 0
+        for visit in duties[key].visits:
+            load += 1 if visit.kind == 'pickup' else -1 if visit.kind == 'dropoff' else 0
+            if not 0 <= load <= p.capacity:
+                raise Infeasible('DRT capacity')
+    check_inventory(duties, plan, net, p)
+    protect_ordinary(decoder, trips, duties, plan)
+    guard = getattr(decoder, 'initial_capacity_guard', None)
+    if guard is None:
+        guard = decoder.initial_capacity_guard = CapacityGuard(net, p)
+    guard.demand_cache = demand_cache
+    guard.check(trips, duties, plan)
+    return trips
+
 def draft_check(decoder, plan):
+    if any(e.target not in decoder.nominal_trips for e in plan):
+        return continuation_check(decoder, plan)
     import numpy as np
     from collections import Counter
     from bisect import bisect_left
@@ -84,7 +162,7 @@ def draft_check(decoder, plan):
         target = trips[e.target]
         a = source.visits[e.split]
         b = target.visits[e.join]
-        if e.split == 0 or e.join == 0 or e.join >= len(target.visits) - 1:
+        if not 0 <= e.split < len(source.visits) - 1 or not 0 <= e.join < len(target.visits) - 1:
             raise Infeasible('Split/join must use an intermediate station')
         if source.line != target.line and (a.node not in net.depots or b.node not in net.depots):
             raise Infeasible('Cross-line split/join must use an interchange')
@@ -176,15 +254,15 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
             invalid = None
             for e in plan:
                 a = trips[e.split_trip].visits[e.split]
-                b = trips[e.target].visits[e.join]
+                b = trips[e.target].visits[e.join] if e.target in trips else None
                 profile = interval(net, people, e.events, a, p)
                 if profile is None:
                     invalid = e
                     break
                 _, _, node, lo, hi = profile
-                travel = net.distance(node, b.node) / p.speed * 60
-                couple = b.departure - p.operation_time
-                if lo + travel > couple + 1e-07 or hi + travel < couple - p.max_coupling_wait - 1e-07:
+                travel = net.distance(node, b.node) / p.speed * 60 if b is not None else 0
+                couple = b.departure - p.operation_time if b is not None else None
+                if b is not None and (lo + travel > couple + 1e-07 or hi + travel < couple - p.max_coupling_wait - 1e-07):
                     invalid = e
                     break
             if invalid is None:
@@ -215,42 +293,30 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
             if profile is None:
                 return
             distance, waiting, node, earliest, latest = profile
-            from bisect import bisect_left, bisect_right
-            mask = frozenset(ops)
-            cache = getattr(decoder, 'return_index_cache', None)
-            if cache is None:
-                cache = decoder.return_index_cache = {}
-            if mask not in cache:
-                rows = {}
-                for target in trips.values():
-                    for j, v in enumerate(target.visits[:-1]):
-                        if j:
-                            couple = v.departure + (p.operation_time if (target.id, v.node) not in ops else 0) - p.operation_time
-                            rows.setdefault(v.node, []).append((couple, target.id, j))
-                indexed = {}
-                for station, values in rows.items():
-                    values.sort()
-                    indexed[station] = ([v[0] for v in values], values)
-                if len(cache) >= 256:
-                    cache.pop(next(iter(cache)))
-                cache[mask] = indexed
+            from .continuation_cost import cost
+            position = net.lines[source.line].index(origin.node)
             choices = []
-            for station, (times, values) in cache[mask].items():
-                check(decoder)
-                back = net.distance(node, station)
-                travel = back / p.speed * 60
-                lo = bisect_left(times, earliest + travel - 1e-7)
-                hi = bisect_right(times, latest + travel + p.max_coupling_wait + 1e-7)
-                for couple, target_id, j in values[lo:hi]:
-                    target = trips[target_id]
-                    if target.line != source.line and (origin.node not in net.depots or station not in net.depots):
+            if decoder.allow_solo:
+                for j in range(position + 1, len(net.lines[source.line])):
+                    target = f'backup:{source.line}'
+                    tail = sum(net.road(a, b)[0] for a, b in zip(net.lines[source.line][j:], net.lines[source.line][j + 1:]))
+                    score = net.distance(node, net.lines[source.line][j]) + p.following_ratio * tail
+                    choices.append((0, p.operating_cost * score, target, j))
+            for target in trips.values():
+                if target.id == source.id:
+                    continue
+                for j, visit in enumerate(target.visits[:-1]):
+                    if target.line == source.line:
+                        if int(target.id.rsplit(':', 1)[1]) <= int(source.id.rsplit(':', 1)[1]) or j <= position:
+                            continue
+                    elif origin.node not in net.depots or visit.node not in net.depots:
                         continue
-                    if target.id == source.id:
+                    couple = visit.departure + (p.operation_time if (target.id, visit.node) not in ops else 0) - p.operation_time
+                    travel = net.distance(node, visit.node) / p.speed * 60
+                    if earliest + travel > couple + 1e-07 or latest + travel < couple - p.max_coupling_wait - 1e-07:
                         continue
-                    if target.line == source.line and (int(target.id.rsplit(':', 1)[1]) <= int(source.id.rsplit(':', 1)[1]) or j <= e.split):
-                        continue
-                    choices.append((0 if station in net.depots else 1, couple - earliest - travel, station, target.id, j, distance + back, waiting))
-            for _, _, _, target, j, distance, waiting in sorted(choices):
+                    choices.append((1, cost(net, p, node, target.id, j, trips), target.id, j))
+            for _, _, target, j in sorted(choices):
                 check(decoder)
                 checks += 1
                 decoder.last_construction = {'orders_inserted': index, 'orders_total': len(requests), 'insertion_checks': checks, 'local_backtracks': backtracks}
@@ -264,7 +330,8 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
                     trial.insert(pos, end)
                 try:
                     draft_check(decoder, trial)
-                except Infeasible:
+                except Infeasible as error:
+                    decoder.last_rejection = str(error)
                     continue
                 yield tuple(trial)
         for pos, e in enumerate(plan):
@@ -290,13 +357,11 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
             if slot is None:
                 continue
             for i, v in enumerate(trip.visits[:-1]):
-                if i == 0:
-                    continue
                 start = v.departure + (p.operation_time if (trip.id, v.node) not in ops else 0)
                 pickup = max(person.earliest, start + net.distance(v.node, person.origin) / p.speed * 60)
                 if pickup <= person.latest + 1e-07:
-                    sources.append((0 if v.node in net.depots else 1, pickup - person.earliest, net.distance(v.node, person.origin), trip.id, i, slot))
-        for _, _, _, trip, i, slot in sorted(sources):
+                    sources.append((pickup - person.earliest, net.distance(v.node, person.origin), trip.id, i, slot))
+        for _, _, trip, i, slot in sorted(sources):
             v = trips[trip].visits[i]
             e = Excursion(f'{trip}/m{slot}', i, '', 0, ((person.id, True), (person.id, False)), trip, v.node)
             yield from endings(e, plan, None)

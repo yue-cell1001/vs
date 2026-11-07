@@ -15,6 +15,7 @@ class ScheduledSearchTests(unittest.TestCase):
     def test_generated_initial_plan_is_compatible_with_single_allocation_repairs(self):
         n, p, table = scenario(ordinary=2, drt=2)
         decoder = Decoder(n, table, p)
+        decoder.allow_solo = False
         plan = construct(decoder, 0, random.Random(p.seed), progress=lambda _: None)
         self.assertTrue(compatible(decoder, plan))
         self.assertTrue(all(e.target in decoder.nominal_trips for e in plan))

@@ -13,7 +13,9 @@ def compatible(decoder, plan):
         trip = decoder.nominal_trips[e.split_trip]
         if not 0 <= e.split < len(trip.visits) - 1 or e.split_node != trip.visits[e.split].node:
             return False
-        if e.target not in decoder.nominal_trips:
+        if e.target not in decoder.nominal_trips and e.target not in ('', f'backup:{trip.line}'):
+            return False
+        if (not e.target or e.target.startswith('backup:')) and not e.split < e.join < len(trip.visits):
             return False
         pickups = {q for q, pickup in e.events if pickup}
         drops = {q for q, pickup in e.events if not pickup}

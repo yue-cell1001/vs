@@ -102,7 +102,10 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
             before = monotonic()
             progress('  Initial joint allocation started')
             try:
-                return decoder.decode(*args, **kwargs)
+                result = decoder.decode(*args, **kwargs)
+                if result.errors:
+                    progress(f'  Initial allocation rejected: {result.errors[0]}')
+                return result
             finally:
                 elapsed = monotonic() - before
                 initialization_decode_seconds += elapsed
@@ -142,6 +145,7 @@ def solve(net, timetable, p, progress=print, seeds=(), checkpoint=None, resume=N
                     if not initial.errors: archive.add(initial)
                 except (Infeasible, SearchTimeout) as error:
                     failures.append({'initial_rule':rule,'error':str(error), 'timed_out': isinstance(error, SearchTimeout)})
+                    progress(f'  Initial construction rejected: {error}')
                     if isinstance(error, SearchTimeout):
                         break
             else:
