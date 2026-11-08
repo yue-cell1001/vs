@@ -10,6 +10,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--verify', action='store_true')
     parser.add_argument('--output', default='results')
+    parser.add_argument('--workers', type=int, default=1)
+    parser.add_argument('--start-timetable', type=int)
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--retry-failed', action='store_true')
     parser.add_argument('--no-reports', action='store_true', )
@@ -21,6 +23,10 @@ def main():
     parser.add_argument('--iterations', type=int, default=200)
     parser.add_argument('--subproblem-seconds', type=float)
     args = parser.parse_args()
+    if args.workers < 1:
+        parser.error('--workers must be positive')
+    if args.start_timetable is not None and not args.resume:
+        parser.error('--start-timetable requires --resume')
     if args.retry_failed and not args.resume:
         parser.error('--retry-failed requires --resume')
     if args.verify:
@@ -46,7 +52,7 @@ def main():
     try:
         if not args.resume:
             subprocess.run([sys.executable, '-m', 'stage1.main', '--data', args.data, '--output', str(output / 'stage1.json'), '--population', str(args.population), '--generations', str(args.generations), '--evaluation-budget', str(args.evaluation_budget)], check=True)
-        subprocess.run([sys.executable, '-m', 'stage2.main', '--data', args.data, '--timetables', str(output / 'stage1.json'), '--output', str(output / 'stage2'), '--iterations', str(args.iterations)] + (['--subproblem-seconds', str(args.subproblem_seconds)] if args.subproblem_seconds is not None else []) + (['--resume'] if args.resume else []) + (['--retry-failed'] if args.retry_failed else []) + (['--no-reports'] if args.no_reports else []) + (['--no-plot'] if args.no_plot else []), check=True)
+        subprocess.run([sys.executable, '-m', 'stage2.main', '--data', args.data, '--timetables', str(output / 'stage1.json'), '--output', str(output / 'stage2'), '--iterations', str(args.iterations)] + (['--subproblem-seconds', str(args.subproblem_seconds)] if args.subproblem_seconds is not None else []) + (['--resume'] if args.resume else []) + ['--workers', str(args.workers)] + (['--start-timetable', str(args.start_timetable)] if args.start_timetable is not None else []) + (['--retry-failed'] if args.retry_failed else []) + (['--no-reports'] if args.no_reports else []) + (['--no-plot'] if args.no_plot else []), check=True)
         completed = True
     finally:
         elapsed = previous + monotonic() - start

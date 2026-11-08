@@ -110,10 +110,20 @@ def draw(solution, net, p, directory, dpi=200, include_reserve=True):
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+    changes = []
+    grouped = {}
+    for row in rows:
+        grouped.setdefault((row['line'], row['trip']), []).append(row)
+    for (line, trip), parts in grouped.items():
+        parts.sort(key=lambda row: (row['start_order'], row['departure']))
+        for before, after in zip(parts, parts[1:]):
+            if before['end'] == after['start'] and before['formation'] != after['formation']:
+                changes.append({'line': line, 'trip': trip, 'station': after['start_order'],
+                                'time': after['departure'], 'before': before['formation'], 'after': after['formation']})
     reserve_chart = draw_reserve_drt(solution, directory, dpi) if include_reserve else None
     if reserve_chart:
         outputs.append(reserve_chart)
-    (directory / 'plot_info.json').write_text(json.dumps({'files': outputs, 'fixed_segments': len(rows), 'DRT_offroute_segments_displayed': False, 'reserve_drt_chart': reserve_chart, 'station_axis': 'fixed stop ordinal', 'formation_colors': colors, 'source': 'actual physical module fixed legs'}, indent=2), encoding='utf-8')
+    (directory / 'plot_info.json').write_text(json.dumps({'files': outputs, 'fixed_segments': len(rows), 'DRT_offroute_segments_displayed': False, 'DRT_position_markers_displayed': False, 'independent_segments': sum(r['trip'].startswith(('solo/', 'backup/')) for r in rows), 'reserve_drt_chart': reserve_chart, 'station_axis': 'fixed stop ordinal', 'formation_colors': colors, 'formation_color_policy': 'actual_segment_count', 'formation_changes': changes, 'source': 'actual physical module fixed and independent continuation legs'}, indent=2), encoding='utf-8')
     return outputs
 
 def choose_entry(entries, name=None):

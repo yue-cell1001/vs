@@ -40,12 +40,18 @@ def main():
     parser.add_argument('--operating-cost', type=float, default=Params().operating_cost)
     parser.add_argument('--objective-bounds')
     parser.add_argument('--no-reports', action='store_true')
+    parser.add_argument('--workers', type=int, default=1)
+    parser.add_argument('--start-timetable', type=int)
     parser.add_argument('--resume', action='store_true')
     parser.add_argument('--retry-failed', action='store_true')
     parser.add_argument('--plot', action='store_true', default=True)
     parser.add_argument('--no-plot', dest='plot', action='store_false')
     parser.add_argument('--require-feasible-iteration', action='store_true')
     args = parser.parse_args()
+    if args.workers < 1:
+        parser.error('--workers must be positive')
+    if args.start_timetable is not None and not args.resume:
+        parser.error('--start-timetable requires --resume')
     if args.retry_failed and not args.resume:
         parser.error('--retry-failed requires --resume')
     start = monotonic()
@@ -88,7 +94,9 @@ def main():
                 raise ValueError('Warehouse capacity changed after a feasible search was saved; use a new output directory')
     elif (root / 'configuration.json').exists():
         raise ValueError('Output exists; use --resume or another directory')
-    _write(root / 'configuration.json', {'fingerprint': fingerprint, 'parameters': asdict(p), 'objective_bounds': upper, 'bound_calculation': bound_calculation, 'allocation_scales': allocation_scales})
+    from .parallel import check_start
+    check_start(root, len(candidates), args.start_timetable)
+    _write(root / 'configuration.json', {'fingerprint': fingerprint, 'parameters': asdict(p), 'objective_bounds': upper, 'bound_calculation': bound_calculation, 'allocation_scales': allocation_scales, 'execution': {'workers': args.workers, 'start_timetable': args.start_timetable, 'parallel_archive': 'completed_before_batch'}})
     previous_elapsed = 0.0
     if args.resume and (root / 'timing.json').exists():
         previous_elapsed = json.loads((root / 'timing.json').read_text(encoding='utf-8')).get('total_elapsed_seconds', 0)
@@ -103,17 +111,31 @@ def main():
     failures = []
     processed = 0
     try:
+        if args.workers > 1:
+            from .parallel import run_parallel
+
+            parallel_done = {i for i in range(len(candidates)) if (root / f'timetable_{i + 1:02}/finished.json').exists() or (not args.retry_failed and (root / f'timetable_{i + 1:02}/failure.json').exists() and not (root / f'timetable_{i + 1:02}/checkpoint.json').exists())}
+
+            def parallel_progress(index):
+                parallel_done.add(index)
+                done = len(parallel_done)
+                _write(root / 'progress.json', {'completed': done, 'total': len(candidates), 'last_completed': index + 1, 'phase': 'parallel_search'})
+                _write(root / 'timing.json', timing('running'))
+
+            run_parallel(candidates, p, net, args.data, root, upper, allocation_scales, args.workers,
+                         args.resume, args.retry_failed, args.start_timetable, parallel_progress)
+        reuse_results = args.resume or args.workers > 1
         for k, candidate in enumerate(candidates):
             folder = root / f'timetable_{k + 1:02}'
             folder.mkdir(exist_ok=True)
             cp = replace(p, seed=p.seed + k)
             recovered = None
-            if args.resume and not args.retry_failed and (folder / 'failure.json').exists() and (not (folder / 'checkpoint.json').exists()):
+            if reuse_results and (not args.retry_failed or args.workers > 1) and (folder / 'failure.json').exists() and (not (folder / 'checkpoint.json').exists()):
                 failures.append(json.loads((folder / 'failure.json').read_text(encoding='utf-8')))
                 processed = k + 1
                 continue
             saved_path = folder / 'finished.json' if (folder / 'finished.json').exists() else folder / 'checkpoint.json'
-            if args.resume and saved_path.exists():
+            if reuse_results and saved_path.exists():
                 payload = json.loads(saved_path.read_text(encoding='utf-8'))
                 saved = [restore(raw) for raw in payload['solutions']]
                 from .constraints import validate
@@ -127,11 +149,15 @@ def main():
                     archive.add(item)
                 if saved_path.name == 'finished.json':
                     stat = payload['search']
-                    export(saved, net, cp, folder, {'timetable_index': k, 'phase': 'completed', 'search': stat}, tables=False)
+                    if args.start_timetable is None or k + 1 >= args.start_timetable:
+                        export(saved, net, cp, folder, {'timetable_index': k, 'phase': 'completed', 'search': stat}, tables=False)
                     stats.append({'timetable': k, **stat})
                     processed = k + 1
                     continue
                 recovered = {'solutions': saved, 'state': payload['state']}
+
+            if args.workers > 1:
+                raise RuntimeError(f'Parallel timetable {k + 1} produced no completed result')
 
             def checkpoint(items, phase):
                 for item in items:
