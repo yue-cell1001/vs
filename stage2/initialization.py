@@ -371,9 +371,7 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
             if not e.events:
                 continue
             base = plan[:pos] + plan[pos + 1:]
-            for a in range(len(e.events)):
-                if a and sum(1 if pickup else -1 for _, pickup in e.events[:a]) == 0:
-                    continue
+            for a in range(len(e.events) + 1):
                 for b in range(a + 1, len(e.events) + 2):
                     check(decoder)
                     events = list(e.events)
@@ -395,8 +393,8 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
                 start = v.departure + (p.operation_time if (trip.id, v.node) not in ops else 0)
                 pickup = max(person.earliest, start + net.distance(v.node, person.origin) / p.speed * 60)
                 if pickup <= person.latest + 1e-07:
-                    sources.append((pickup - person.earliest, max(0.0, person.earliest - start - net.distance(v.node, person.origin) / p.speed * 60), net.distance(v.node, person.origin), trip.id, i, slot))
-        for _, _, _, trip, i, slot in sorted(sources):
+                    sources.append((pickup - person.earliest, net.distance(v.node, person.origin), trip.id, i, slot))
+        for _, _, trip, i, slot in sorted(sources):
             v = trips[trip].visits[i]
             e = Excursion(f'{trip}/m{slot}', i, '', 0, ((person.id, True), (person.id, False)), trip, v.node)
             yield from endings(e, plan, None)

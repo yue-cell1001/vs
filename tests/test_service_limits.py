@@ -80,14 +80,14 @@ class ServiceLimitsTests(unittest.TestCase):
         limits = completion_limits(decoder.trips)
         self.assertTrue(all(duty_in_horizon(duty, limits) for duty in solution.duties.values()))
 
-    def test_new_task_selects_departure_near_request_instead_of_first_trip(self):
+    def test_new_task_preserves_original_source_order(self):
         n, p, table = scenario(ordinary=0)
         n.nodes[12] = replace(n.nodes[12], x=0, y=0)
         n.nodes[13] = replace(n.nodes[13], x=500, y=0)
         n.passengers = [replace(q, earliest=10, latest=11) for q in n.passengers]
         decoder = Decoder(n, table, p)
         plan = construct(decoder, 0, random.Random(p.seed), progress=lambda _: None)
-        self.assertEqual(plan[0].split_trip, 'A:2')
+        self.assertEqual(plan[0].split_trip, 'A:0')
 
     def test_late_task_cannot_extend_the_fixed_trip_horizon(self):
         n, p, table = scenario()

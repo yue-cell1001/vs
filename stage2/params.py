@@ -47,7 +47,7 @@ class Params:
     exploration: float = 0.05
     dominance_reward: float = 0.3
     hv_margin: float = 0.1
-    model_version: str = 'symmetric-chebyshev-bounded-service-v10'
+    model_version: str = 'symmetric-chebyshev-rules-only-v11'
 
     @property
     def coupling_discount(self):
