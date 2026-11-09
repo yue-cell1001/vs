@@ -30,7 +30,7 @@ class ReferenceTests(unittest.TestCase):
     @unittest.skipUnless(all((Path(__file__).resolve().parents[1] / "data" / name).is_file() for name in ("nodes_with_drt.csv", "lines.csv", "edges.csv", "passengers.csv")), "Data files are missing")
     def test_full_input_reference_coverage(self):
         n = load_network('data')
-        p = Params()
+        p = Params(max_formation=4)
         table = {line: list(range(480, 601, 15)) for line in n.lines}
         decoder = ReferenceDecoder(n, p)
         self.assertTrue(decoder.decode(table).uncovered)
@@ -86,7 +86,7 @@ class ReferenceTests(unittest.TestCase):
 
     def test_capacity_queue_and_hard_formation_limit(self):
         n = network([Passenger(i, 0, 3, 0, 0, 15, 'A') for i in range(30)])
-        r = ReferenceDecoder(n, self.parameters()).decode(self.table(n))
+        r = ReferenceDecoder(n, self.parameters(max_formation=4)).decode(self.table(n))
         self.assertEqual(r.trips['A:0']['formation'], 4)
         self.assertEqual(r.trips['A:0']['peak'], 24)
         self.assertEqual(r.trips['A:1']['peak'], 6)
@@ -98,7 +98,7 @@ class ReferenceTests(unittest.TestCase):
     def test_capacity_four_real_repair_and_second_stage_baseline(self):
         from stage1.verification import verify
         n = load_network('data')
-        p = Params(capacity=4)
+        p = Params(capacity=4, max_formation=4)
         decoder = ReferenceDecoder(n, p)
         table = {line: list(range(480, 601, 15)) for line in n.lines}
         self.assertTrue(decoder.decode(table).uncovered)

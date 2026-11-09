@@ -26,6 +26,6 @@ def evaluate(solution, net, p):
             normal_wait += wait
             detour += s.offroute_minutes
     solo = sum(leg.distance * p.operating_cost for duty in solution.duties.values() for leg in duty.legs if leg.kind == 'solo')
-    solution.components = {'purchase': purchase, 'fixed_travel': fixed_cost, 'drt_travel': variable - solo, 'solo_travel': solo, 'rebalance_travel': rebalance, 'normal_wait_minutes': normal_wait, 'drt_wait_minutes': drt_wait, 'normal_detour_minutes': sum((s.detour for pid, s in solution.services.items() if not people[pid].kind)), 'normal_offroute_minutes': detour}
+    solution.components = {'purchase': purchase, 'fixed_travel': fixed_cost, 'drt_travel': variable - solo, 'solo_travel': solo, 'rebalance_travel': rebalance, 'normal_wait_minutes': normal_wait, 'drt_wait_minutes': drt_wait, 'normal_detour_minutes': sum((s.detour for pid, s in solution.services.items() if not people[pid].kind)), 'normal_offroute_minutes': detour, 'drt_detour_minutes': sum(s.detour for pid, s in solution.services.items() if people[pid].kind)}
     solution.objectives = (purchase + fixed_cost + variable + rebalance, normal_wait + drt_wait + sum((s.detour for pid, s in solution.services.items() if not people[pid].kind)))
     return solution.objectives

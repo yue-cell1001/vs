@@ -40,7 +40,8 @@ class CatalogueReuseTests(unittest.TestCase):
         before, _ = catalogue(net, groups, set(), p, trips)
         for duty in groups.values():
             duty.visits[:] = [replace(v, arrival=v.arrival + 1, departure=v.departure + 1) for v in duty.visits]
-        after, _ = catalogue(net, groups, set(), p, trips)
+        shifted = make_trips(net, {line: [t + 1 for t in times] for line, times in table.items()}, p)
+        after, _ = catalogue(net, groups, set(), p, shifted)
         self.assertEqual(len(before), len(after))
         for old, new in zip(before, after):
             self.assertAlmostEqual(new.pickup, old.pickup + 1)

@@ -90,7 +90,7 @@ class DeltaEvaluator:
         rebalance = sum((m['distance'] for m in solution.metadata['rebalance_moves'])) * p.operating_cost
         purchase = solution.metadata['fleet_size'] * p.purchase_cost
         solo = sum(leg.distance * p.operating_cost for duty in solution.duties.values() for leg in duty.legs if leg.kind == 'solo')
-        solution.components = {'purchase': purchase, 'fixed_travel': self.fixed_cost, 'drt_travel': self.variable - solo, 'solo_travel': solo, 'rebalance_travel': rebalance, 'normal_wait_minutes': normal, 'drt_wait_minutes': drt, 'normal_detour_minutes': quality, 'normal_offroute_minutes': offroute}
+        solution.components = {'purchase': purchase, 'fixed_travel': self.fixed_cost, 'drt_travel': self.variable - solo, 'solo_travel': solo, 'rebalance_travel': rebalance, 'normal_wait_minutes': normal, 'drt_wait_minutes': drt, 'normal_detour_minutes': quality, 'normal_offroute_minutes': offroute, 'drt_detour_minutes': sum(s.detour for pid, s in solution.services.items() if self.people[pid].kind)}
         solution.objectives = (purchase + self.fixed_cost + self.variable + rebalance, normal + drt + quality)
         solution.metadata['incremental_evaluation'] = {'changed_duties': len(changed), 'reused_duties': reused, 'changed_passengers': len(changed_people), 'reused_passengers': reused_people, 'changed_fixed_arcs': len(touched)}
         return solution.objectives

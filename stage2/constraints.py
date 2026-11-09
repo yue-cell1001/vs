@@ -7,6 +7,8 @@ def validate(solution, net, trips, p, required=None):
         from common.timetable import make_trips
         trips = make_trips(net, solution.metadata['timetable'], p, solution.metadata.get('operations', ()))
     errors = []
+    from .service_limits import direct_drt_time, completion_limits, line_deadline, duty_in_horizon
+    limits = completion_limits(trips or {})
     if solution.metadata.get('branch_base'):
         from .timing import validate_branch
         if not validate_branch(solution.metadata['timetable'], solution.metadata['branch_base'], p):
@@ -65,6 +67,8 @@ def validate(solution, net, trips, p, required=None):
             errors.append(f'{key}: invalid visit/leg cardinality')
             continue
         vehicle_paths[d.vehicle].append(d)
+        if not duty_in_horizon(d, limits):
+            errors.append(f'{key}: module task exceeds direction last-trip arrival')
         for v in d.visits:
             if v.kind in ('join', 'stored_join'):
                 if v.arrival + p.operation_time > v.departure + 1e-07:
@@ -136,6 +140,12 @@ def validate(solution, net, trips, p, required=None):
             errors.append(f'{pid}: inconsistent service times')
         if s.pickup < person.earliest - 1e-07 or s.dropoff < s.pickup - 1e-07:
             errors.append(f'{pid}: pickup precedence')
+        if s.dropoff > line_deadline(alight.line or person.line, limits) + 1e-7:
+            errors.append(f'{pid}: service exceeds direction last-trip arrival')
+        if person.kind:
+            extra = max(0.0, s.dropoff - s.pickup - direct_drt_time(net, person, p))
+            if extra > p.max_drt_detour + 1e-7 or abs(extra - s.detour) > 1e-6:
+                errors.append(f'{pid}: excess/wrong DRT extra ride time')
         if person.kind and s.pickup > person.latest + 1e-07:
             errors.append(f'{pid}: pickup window')
         for a, b in zip(s.rides, s.rides[1:]):

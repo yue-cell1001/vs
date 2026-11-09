@@ -12,7 +12,9 @@ class InitialConstructionTests(unittest.TestCase):
     def test_capacity_guard_protects_ordinary_riders_before_insertion(self):
         n, p, _ = scenario(ordinary=2, drt=1)
         n.lines = {'A': n.lines['A'], 'Ar': n.lines['Ar']}
-        p = replace(p, capacity=1, max_formation=2)
+        n.nodes[12] = replace(n.nodes[12], x=500, y=0)
+        n.nodes[13] = replace(n.nodes[13], x=500, y=0)
+        p = replace(p, capacity=1, max_formation=2, depot_initial=1)
         decoder = Decoder(n, {'A': [0], 'Ar': [0]}, p)
         fixed = Excursion('A:0/m1', 1, 'depot:1', 0, ((100, True), (100, False)), 'A:0', 1)
         context = decoder.context((fixed,))
@@ -29,6 +31,8 @@ class InitialConstructionTests(unittest.TestCase):
         n, p, _ = scenario(ordinary=7)
         n.lines = {'A': n.lines['A'], 'Ar': n.lines['Ar']}
         n.passengers = [replace(q, origin=1) if not q.kind else q for q in n.passengers]
+        n.nodes[12] = replace(n.nodes[12], x=0, y=0)
+        n.nodes[13] = replace(n.nodes[13], x=500, y=0)
         p = replace(p, max_formation=2)
         decoder = Decoder(n, {'A': [0], 'Ar': [0]}, p)
         decision = Excursion('A:0/m1', 0, 'backup:A', 2, ((100, True), (100, False)), 'A:0', 0)

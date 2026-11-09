@@ -56,10 +56,21 @@ def construct_duties(net, trips, base, excursions, p, relaxed=False, with_operat
             t = e.release_time
             visits[-1] = replace(origin, departure=t)
         event_times = None
-        if e.events and not relaxed and e.target in trips:
+        if e.events and not relaxed:
             from .synchronization import service_times
-            join = trips[e.target].visits[e.join]
-            event_times = service_times(net, people, e.events, origin.node, t, join.node, join.departure - p.operation_time, p)
+            from .service_limits import completion_limits, line_deadline
+            limits = completion_limits(trips)
+            deadline = line_deadline(line, limits)
+            if e.target in trips:
+                join = trips[e.target].visits[e.join]
+                event_times = service_times(net, people, e.events, origin.node, t, join.node, join.departure - p.operation_time, p, deadline)
+            elif not e.target or e.target.startswith('backup:'):
+                route = net.lines[e.target.split(':', 1)[1] if e.target else line]
+                remaining = sum(net.road(a, b)[1] for a, b in zip(route[e.join:], route[e.join + 1:])) + max(0, len(route) - e.join - 1) * p.stop_time
+                event_times = service_times(net, people, e.events, origin.node, t, route[e.join], None, p, deadline - remaining)
+            else:
+                target = int(e.target.split(':', 1)[1])
+                event_times = service_times(net, people, e.events, origin.node, t, target, None, p, deadline)
         for event_index, (pid, pickup) in enumerate(e.events):
             if (pid, pickup) in seen:
                 raise Infeasible('Repeated pickup/drop event')

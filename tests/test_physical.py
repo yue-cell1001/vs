@@ -53,7 +53,7 @@ class PhysicalTests(unittest.TestCase):
 
     def test_original_constructor_orders_requests_by_deadline(self):
         from unittest.mock import patch
-        from stage2.initialization import sequence
+        from stage2.synchronization import service_times as sequence
         n, p, table = scenario(ordinary=0, drt=2)
         n.passengers = [replace(q, latest=10) if q.id == 101 else q for q in n.passengers]
         decoder = Decoder(n, table, p)
@@ -63,7 +63,7 @@ class PhysicalTests(unittest.TestCase):
                 if pickup and pid not in seen:
                     seen.append(pid)
             return sequence(*args)
-        with patch('stage2.initialization.sequence', side_effect=observed):
+        with patch('stage2.synchronization.service_times', side_effect=observed):
             plan = construct(decoder, 0, random.Random(p.seed), progress=lambda _: None)
         self.assertEqual(seen, [101, 100])
         self.assertFalse(decoder.decode(plan, {100, 101}, audit=True).errors)

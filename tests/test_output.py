@@ -40,7 +40,7 @@ class OutputTests(unittest.TestCase):
             self.assertFalse(list(root.rglob('README*')))
             info = json.loads((folder / 'final_figures/plot_info.json').read_text())
             self.assertFalse(info['DRT_offroute_segments_displayed'])
-            self.assertEqual(len(info['formation_colors']), 4)
+            self.assertEqual(len(info['formation_colors']), p.max_formation)
             with ZipFile(folder / 'final_dispatch.xlsx') as z:
                 for name in z.namelist():
                     ET.fromstring(z.read(name))

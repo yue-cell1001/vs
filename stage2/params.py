@@ -3,15 +3,16 @@ from dataclasses import dataclass
 @dataclass(frozen=True)
 class Params:
     capacity: int = 6
-    max_formation: int = 4
+    max_formation: int = 5
     speed: float = 30
     purchase_cost: float = 50
     operating_cost: float = 0.3
     following_ratio: float = 0.8
     max_detour: float = 15
+    max_drt_detour: float = 15
     max_coupling_wait: float = 10
     depot_capacity: int = 20
-    depot_initial: int = 5
+    depot_initial: int = 0
     stop_time: float = 20 / 60
     operation_time: float = 30 / 60
     iterations: int = 200
@@ -46,7 +47,7 @@ class Params:
     exploration: float = 0.05
     dominance_reward: float = 0.3
     hv_margin: float = 0.1
-    model_version: str = 'symmetric-chebyshev-legal-continuations-v9'
+    model_version: str = 'symmetric-chebyshev-bounded-service-v10'
 
     @property
     def coupling_discount(self):
@@ -66,7 +67,7 @@ class Params:
             raise ValueError('Invalid capacity')
         if self.speed <= 0 or not 0 <= self.following_ratio <= 1:
             raise ValueError('Invalid speed/cost ratio')
-        if min(self.purchase_cost, self.operating_cost, self.stop_time, self.operation_time, self.max_coupling_wait, self.max_detour) < 0:
+        if min(self.purchase_cost, self.operating_cost, self.stop_time, self.operation_time, self.max_coupling_wait, self.max_detour, self.max_drt_detour) < 0:
             raise ValueError('Invalid operational value')
         if not 0 < self.min_headway <= self.max_headway or self.end <= self.start or self.shift_limit < 0:
             raise ValueError('Invalid timetable bounds')

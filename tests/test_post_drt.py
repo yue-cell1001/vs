@@ -73,6 +73,8 @@ class PostDRTTests(unittest.TestCase):
 
     def test_fixed_donor_returns_then_serves_another_request(self):
         n, p, table = scenario(ordinary=0, drt=2)
+        p = replace(p, end=30)
+        table = {line: list(range(0, 31, 5)) for line in table}
         n.passengers = [replace(q, earliest=15, latest=40) if q.id == 101 else q for q in n.passengers]
         first = self.decision('depot:1', 0)
         second = Excursion('A:0/m1', 0, 'backup:A', 2, ((101, True), (101, False)), 'depot', 1, 13)

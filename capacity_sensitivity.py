@@ -235,7 +235,10 @@ def reuse_first_stage(settings, data, source, destination, net):
     for capacity in settings.capacities:
         folder = source / f'capacity_{capacity}'
         report = read_json(folder / 'stage1_run.json', {})
-        if report.get('parameters') != canonical(asdict(settings.stage1(capacity))):
+        expected = canonical(asdict(settings.stage1(capacity)))
+        recorded = report.get('parameters', {})
+        changed = {key for key in set(recorded) | set(expected) if recorded.get(key) != expected.get(key)}
+        if changed - {'max_formation', 'depot_initial'} or not recorded:
             raise ValueError(f'Capacity {capacity}: saved first-stage parameters do not match')
         tables = read_json(folder / 'stage1.json')
         if not isinstance(tables, list) or not 0 < len(tables) <= settings.stage1(capacity).candidates:
@@ -244,6 +247,10 @@ def reuse_first_stage(settings, data, source, destination, net):
             raise ValueError(f'Capacity {capacity}: illegal saved first-stage timetable')
         if not math.isfinite(report.get('elapsed_seconds', -1)) or report.get('elapsed_seconds', -1) < 0:
             raise ValueError(f'Capacity {capacity}: invalid first-stage timing record')
+        if changed:
+            from stage1.reuse import refresh
+            tables = refresh(tables, net, settings.stage1(capacity))
+            report = {**report, 'source_parameters': recorded, 'parameters': expected, 'reference_recomputed': True, 'timetable_search_reused': True}
         bundles.append((capacity, tables, report))
     for capacity, tables, report in bundles:
         folder = destination / f'capacity_{capacity}'
@@ -438,7 +445,7 @@ def describe_trend(capacities, values, label, unit):
 def write_report(root, cases, settings, search_bounds, workers=1):
     result = analyze(cases)
     result.update(settings=canonical(asdict(settings)), search_objective_bounds=search_bounds, parallel_workers=workers,
-                  cost_scaling='purchase=50*capacity/6; per_km=0.3*capacity/6; maximum formation fixed at 4')
+                  cost_scaling=f'purchase=50*capacity/6; per_km=0.3*capacity/6; maximum formation fixed at {Stage2Params().max_formation}')
     with (root / 'pareto_fronts.csv').open('w', newline='', encoding='utf-8-sig') as stream:
         writer = csv.writer(stream)
         writer.writerow(['capacity', 'F1', 'F2'])
@@ -485,8 +492,8 @@ def run(settings, data, output, resume=False, report_only=False, executor=execut
         raise ValueError('Workers must be between 1 and 5')
     data, root = Path(data).resolve(), Path(output).resolve()
     net = load_network(data)
-    if Stage1Params().max_formation != 4 or Stage2Params().max_formation != 4:
-        raise ValueError('This comparison requires maximum formation fixed at 4')
+    if Stage1Params().max_formation != Stage2Params().max_formation:
+        raise ValueError('Both stages must use the same maximum formation')
     design = canonical({'version': 1, 'settings': asdict(settings), 'data_fingerprint': fingerprint(data),
                         'stage1_defaults': asdict(Stage1Params()), 'stage2_defaults': asdict(Stage2Params())})
     root.mkdir(parents=True, exist_ok=True)

@@ -47,7 +47,7 @@ def draw(solution, net, p, directory, dpi=200, include_reserve=True):
     outputs = []
     if not rows:
         raise ValueError('No active fixed-line segments')
-    colors = {1: '#FFD000', 2: '#66CC55', 3: '#1FA6A6', 4: '#6F168A'}
+    colors = {1: '#FFD000', 2: '#66CC55', 3: '#1FA6A6', 4: '#6F168A', 5: '#D55E00'}
 
     def clock(value, _):
         second = round(value * 60)

@@ -63,6 +63,11 @@ class JointOptimizer:
         p, net = (self.p, self.net)
         forced = {e.source for e in excursions}
         groups, members = grouped_duties(duties, forced)
+        from .service_limits import completion_limits, duty_in_horizon
+        limits = completion_limits(trips)
+        for key in forced:
+            if not duty_in_horizon(duties[key], limits):
+                raise Infeasible('Module task finishes after its direction last-trip arrival')
         columns, requests = catalogue(net, groups, required, p, trips, excursions)
         names = list(groups)
         gi = {k: i for i, k in enumerate(names)}
@@ -90,7 +95,7 @@ class JointOptimizer:
         for key in names:
             duty = groups[key]
             marginal = sum((leg.distance * p.operating_cost * (p.following_ratio if leg.kind == 'fixed' else 1) for leg in duty.legs))
-            use[key] = variable(1 if key in forced else 0, len(members[key]), marginal)
+            use[key] = variable(1 if key in forced else 0, len(members[key]) if duty_in_horizon(duty, limits) else 0, marginal)
             birth[key] = variable(0, len(members[key]) if duty.visits[0].node in terminals or (key.startswith('reserve:') and duty.visits[0].node in net.depots) else 0, p.purchase_cost)
             finish[key] = variable(0, len(members[key]))
         for node in net.depots:

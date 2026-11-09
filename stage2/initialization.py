@@ -40,12 +40,31 @@ def operations(net, trips, plan):
     return result
 
 def interval(net, people, events, origin, p):
-    result = sequence(net, people, events, origin, p)
-    if result is None:
+    from .synchronization import service_times
+    onboard = set()
+    for pid, pickup in events:
+        if pickup:
+            if pid in onboard:
+                return None
+            onboard.add(pid)
+        elif pid not in onboard:
+            return None
+        else:
+            onboard.remove(pid)
+        if len(onboard) > p.capacity:
+            return None
+    if onboard:
         return None
-    last = max((i for i, (_, pickup) in enumerate(events) if pickup), default=-1)
-    if last < 0:
+    try:
+        times = service_times(net, people, events, origin.node, origin.departure, None, None, p)
+    except Infeasible:
         return None
+    if not events or not any(pickup for _, pickup in events):
+        return None
+    nodes = [people[pid].origin if pickup else people[pid].dest for pid, pickup in events]
+    distance = net.distance(origin.node, nodes[0]) + sum(net.distance(a, b) for a, b in zip(nodes, nodes[1:]))
+    waiting = sum(times[i] - people[pid].earliest for i, (pid, pickup) in enumerate(events) if pickup)
+    last = max(i for i, (_, pickup) in enumerate(events) if pickup)
     pid, _ = events[last]
     latest = people[pid].latest + p.stop_time
     node = people[pid].origin
@@ -53,7 +72,8 @@ def interval(net, people, events, origin, p):
         target = people[q].origin if pickup else people[q].dest
         latest += net.distance(node, target) / p.speed * 60 + p.stop_time
         node = target
-    return (*result, latest)
+    return distance, waiting, nodes[-1], times[-1] + p.stop_time, latest
+
 
 def cached_trips(decoder, mask):
     mask = frozenset(mask)
@@ -133,6 +153,10 @@ def continuation_check(decoder, plan):
             load += 1 if visit.kind == 'pickup' else -1 if visit.kind == 'dropoff' else 0
             if not 0 <= load <= p.capacity:
                 raise Infeasible('DRT capacity')
+    from .service_limits import completion_limits, duty_in_horizon
+    limits = completion_limits(trips)
+    if any(not duty_in_horizon(duties[key], limits) for key in sources):
+        raise Infeasible('Task completes after its direction last-trip arrival')
     check_inventory(duties, plan, net, p)
     protect_ordinary(decoder, trips, duties, plan)
     guard = getattr(decoder, 'initial_capacity_guard', None)
@@ -143,8 +167,10 @@ def continuation_check(decoder, plan):
     return trips
 
 def draft_check(decoder, plan):
+    if plan:
+        continuation_check(decoder, plan)
     if any(e.target not in decoder.nominal_trips for e in plan):
-        return continuation_check(decoder, plan)
+        return cached_trips(decoder, operations(decoder.net, decoder.nominal_trips, plan))[0]
     import numpy as np
     from collections import Counter
     from bisect import bisect_left
@@ -277,7 +303,7 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
     elif not initial_mode and rule == 1:
         requests.sort(key=lambda q: (q.latest, q.latest - q.earliest, q.id))
 
-    def offers(person):
+    def offers(person, independent=False):
         nonlocal checks
         nominal = decoder.nominal_trips
 
@@ -296,13 +322,13 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
             from .continuation_cost import cost
             position = net.lines[source.line].index(origin.node)
             choices = []
-            if decoder.allow_solo:
+            if independent and decoder.allow_solo:
                 for j in range(position + 1, len(net.lines[source.line])):
                     target = f'backup:{source.line}'
                     tail = sum(net.road(a, b)[0] for a, b in zip(net.lines[source.line][j:], net.lines[source.line][j + 1:]))
                     score = net.distance(node, net.lines[source.line][j]) + p.following_ratio * tail
-                    choices.append((0, p.operating_cost * score, target, j))
-            for target in trips.values():
+                    choices.append((p.operating_cost * score, target, j))
+            for target in (() if independent else trips.values()):
                 if target.id == source.id:
                     continue
                 for j, visit in enumerate(target.visits[:-1]):
@@ -315,8 +341,15 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
                     travel = net.distance(node, visit.node) / p.speed * 60
                     if earliest + travel > couple + 1e-07 or latest + travel < couple - p.max_coupling_wait - 1e-07:
                         continue
-                    choices.append((1, cost(net, p, node, target.id, j, trips), target.id, j))
-            for _, _, target, j in sorted(choices):
+                    choices.append((cost(net, p, node, target.id, j, trips), target.id, j))
+            from .service_limits import completion_limits, line_deadline
+            horizon = line_deadline(source.line, completion_limits(trips))
+            for _, target, j in sorted(choices):
+                if independent:
+                    route = net.lines[source.line]
+                    remaining = sum(net.road(a, b)[1] for a, b in zip(route[j:], route[j + 1:])) + max(0, len(route) - j - 1) * p.stop_time
+                    if earliest + net.distance(node, route[j]) / p.speed * 60 + remaining > horizon + 1e-7:
+                        continue
                 check(decoder)
                 checks += 1
                 decoder.last_construction = {'orders_inserted': index, 'orders_total': len(requests), 'insertion_checks': checks, 'local_backtracks': backtracks}
@@ -338,7 +371,9 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
             if not e.events:
                 continue
             base = plan[:pos] + plan[pos + 1:]
-            for a in range(len(e.events) + 1):
+            for a in range(len(e.events)):
+                if a and sum(1 if pickup else -1 for _, pickup in e.events[:a]) == 0:
+                    continue
                 for b in range(a + 1, len(e.events) + 2):
                     check(decoder)
                     events = list(e.events)
@@ -360,8 +395,8 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
                 start = v.departure + (p.operation_time if (trip.id, v.node) not in ops else 0)
                 pickup = max(person.earliest, start + net.distance(v.node, person.origin) / p.speed * 60)
                 if pickup <= person.latest + 1e-07:
-                    sources.append((pickup - person.earliest, net.distance(v.node, person.origin), trip.id, i, slot))
-        for _, _, trip, i, slot in sorted(sources):
+                    sources.append((pickup - person.earliest, max(0.0, person.earliest - start - net.distance(v.node, person.origin) / p.speed * 60), net.distance(v.node, person.origin), trip.id, i, slot))
+        for _, _, _, trip, i, slot in sorted(sources):
             v = trips[trip].visits[i]
             e = Excursion(f'{trip}/m{slot}', i, '', 0, ((person.id, True), (person.id, False)), trip, v.node)
             yield from endings(e, plan, None)
@@ -374,6 +409,8 @@ def construct(decoder, rule, rng, progress=print, initial=(), pending=None):
         q = requests[index]
         check(decoder)
         chosen = next(offers(q), None)
+        if chosen is None and decoder.allow_solo:
+            chosen = next(offers(q, independent=True), None)
         if chosen is None:
             if initial_mode and index and (backtracks < p.initial_backtracks):
                 backtracks += 1

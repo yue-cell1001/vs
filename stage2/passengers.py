@@ -33,6 +33,8 @@ def direct_duration(net, line, origin, dest, p):
     return sum((net.road(x, y)[1] for x, y in zip(stops[a:b], stops[a + 1:b + 1]))) + (b - a - 1) * p.stop_time
 
 def catalogue(net, groups, required, p, trips=None, excursions=()):
+    from .service_limits import direct_drt_time, completion_limits, line_deadline
+    limits = completion_limits(trips or {})
     from .routing import cross_line_spans
     crossings = cross_line_spans(groups, trips or {}, excursions)
     ordinary = defaultdict(list)
@@ -79,7 +81,7 @@ def catalogue(net, groups, required, p, trips=None, excursions=()):
                 net, groups, ordinary[line, origin], crossings, line, origin, dest, p,
                 destinations, scheduled)
         for key, i, j, departure, arrival, detour, offroute in itineraries[route_key]:
-            if departure < earliest - 1e-07:
+            if departure < earliest - 1e-07 or arrival > line_deadline(line, limits) + 1e-7:
                 continue
             cost = departure - earliest + detour
             opts.append(Column(ids, (Ride(key, i, j),), departure, arrival, detour, cost, offroute))
@@ -99,10 +101,15 @@ def catalogue(net, groups, required, p, trips=None, excursions=()):
         dropoff = last.visits[j].arrival
         if not person.earliest - 1e-07 <= pickup <= person.latest + 1e-07 or dropoff < pickup - 1e-07:
             raise Infeasible(f'DRT {pid}: time window or precedence')
+        extra = max(0.0, dropoff - pickup - direct_drt_time(net, person, p))
+        if extra > p.max_drt_detour + 1e-7:
+            raise Infeasible(f'DRT {pid}: extra ride time exceeds {p.max_drt_detour} minutes')
+        if dropoff > line_deadline(last.visits[j].line, limits) + 1e-7:
+            raise Infeasible(f'DRT {pid}: service ends after its direction last-trip arrival')
         opts = []
         cost = pickup - person.earliest
         if key == other and i < j and (not any((v.kind in ('stored_join', 'depot') for v in first.visits[i + 1:j]))):
-            opts.append(Column((pid,), (Ride(key, i, j),), pickup, dropoff, 0, cost))
+            opts.append(Column((pid,), (Ride(key, i, j),), pickup, dropoff, extra, cost))
         if key != other:
             for a in range(i + 1, len(first.visits)):
                 va = first.visits[a]
@@ -114,7 +121,7 @@ def catalogue(net, groups, required, p, trips=None, excursions=()):
                     if any((v.kind in ('stored_join', 'depot') for v in last.visits[b + 1:j])):
                         continue
                     if coupled(first, a, last, b):
-                        opts.append(Column((pid,), (Ride(key, i, a), Ride(other, b, j)), pickup, dropoff, 0, cost))
+                        opts.append(Column((pid,), (Ride(key, i, a), Ride(other, b, j)), pickup, dropoff, extra, cost))
         if not opts:
             raise Infeasible(f'DRT {pid}: no physically coupled <=1-transfer itinerary')
         requests.append((1, tuple(range(len(columns), len(columns) + len(opts)))))

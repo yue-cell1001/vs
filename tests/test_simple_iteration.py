@@ -36,7 +36,7 @@ class SimpleIterationTests(unittest.TestCase):
         self.assertTrue(solutions)
 
     def test_simple_repair_uses_pending_order_or_urgent_order(self):
-        from stage2.initialization import sequence
+        from stage2.synchronization import service_times as sequence
         n, p, table = scenario(ordinary=1, drt=3)
         for rule in (0, 1):
             decoder = Decoder(n, table, p)
@@ -46,7 +46,7 @@ class SimpleIterationTests(unittest.TestCase):
                     if pickup and pid not in seen:
                         seen.append(pid)
                 return sequence(*args)
-            with patch('stage2.initialization.sequence', side_effect=observed), patch.object(decoder, 'decode', side_effect=AssertionError('Route construction must not run the joint model')):
+            with patch('stage2.synchronization.service_times', side_effect=observed), patch.object(decoder, 'decode', side_effect=AssertionError('Route construction must not run the joint model')):
                 plan = construct(decoder, rule, random.Random(p.seed), progress=lambda _: None, pending=[102, 100, 101])
             self.assertEqual(seen, [102, 100, 101] if rule == 0 else [100, 101, 102])
             result = decoder.decode(plan, {100, 101, 102}, audit=True)

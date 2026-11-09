@@ -10,7 +10,11 @@ from stage2.obj import evaluate
 from stage2.resources import inventory
 from stage2.routing import Infeasible
 from stage2.plot import draw
-from tests.fixtures import scenario
+from tests.fixtures import scenario as base_scenario
+
+def scenario(*args, **kwargs):
+    net, p, table = base_scenario(*args, **kwargs)
+    return net, replace(p, depot_initial=5), table
 
 class ReserveTests(unittest.TestCase):
 
@@ -25,7 +29,8 @@ class ReserveTests(unittest.TestCase):
 
     def test_standalone_return_and_separate_plot(self):
         n, p, table = scenario()
-        p = replace(p, stop_time=20 / 60, operation_time=30 / 60)
+        p = replace(p, stop_time=20 / 60, operation_time=30 / 60, end=30)
+        table = {line: list(range(0, 31, 5)) for line in table}
         n.passengers = [replace(q, earliest=20, latest=30) if q.kind else q for q in n.passengers]
         decision = Excursion('reserve:1/m0', 0, 'depot:1', 0, ((100, True), (100, False)), 'depot', 1, 0)
         result = Decoder(n, table, p).decode((decision,), {100}, audit=True)
@@ -45,6 +50,8 @@ class ReserveTests(unittest.TestCase):
 
     def test_returned_module_reused_without_new_purchase(self):
         n, p, table = scenario(ordinary=0, drt=2)
+        p = replace(p, end=30)
+        table = {line: list(range(0, 31, 5)) for line in table}
         n.passengers = [replace(q, earliest=15, latest=40) if q.id == 101 else q for q in n.passengers]
         first = Excursion('reserve:1/m0', 0, 'depot:1', 0, ((100, True), (100, False)), 'depot', 1, 0)
         second = Excursion('reserve:1/m0', 0, 'depot:1', 0, ((101, True), (101, False)), 'depot', 1, 14)

@@ -19,7 +19,7 @@ class LegalInitializationTests(unittest.TestCase):
         plan = construct(decoder, 0, random.Random(p.seed), progress=lambda _: None)
         self.assertEqual({q for e in plan for q, pickup in e.events if pickup}, {100})
         self.assertTrue(any(e.split == 0 for e in plan))
-        self.assertTrue(any(e.target.startswith('backup:') for e in plan))
+        self.assertTrue(all(e.target in decoder.nominal_trips or e.target.startswith('backup:') for e in plan))
         self.assertTrue(compatible(decoder, plan))
         result = decoder.decode(plan, {100}, audit=True)
         self.assertFalse(result.errors, result.errors)
@@ -29,6 +29,8 @@ class LegalInitializationTests(unittest.TestCase):
         n, p, _ = scenario(ordinary=7)
         n.lines = {'A': n.lines['A'], 'Ar': n.lines['Ar']}
         n.passengers = [replace(q, origin=1) if not q.kind else q for q in n.passengers]
+        n.nodes[12] = replace(n.nodes[12], x=0, y=0)
+        n.nodes[13] = replace(n.nodes[13], x=500, y=0)
         p = replace(p, max_formation=2)
         decoder = Decoder(n, {'A': [0], 'Ar': [0]}, p)
         decision = Excursion('A:0/m1', 0, 'backup:A', 2, ((100, True), (100, False)), 'A:0', 0)
@@ -41,7 +43,7 @@ class LegalInitializationTests(unittest.TestCase):
         n, p, table = scenario(ordinary=2, drt=2)
         decoder = Decoder(n, table, p)
         plan = construct(decoder, 0, random.Random(p.seed), progress=lambda _: None)
-        self.assertTrue(any(e.target.startswith('backup:') for e in plan))
+        self.assertTrue(all(e.target in decoder.nominal_trips or e.target.startswith('backup:') for e in plan))
         with patch.object(decoder, 'decode', wraps=decoder.decode) as allocate:
             result, failure = repair(decoder, plan, [], 0, random.Random(p.seed))
         self.assertIsNone(failure)

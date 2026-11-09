@@ -13,12 +13,6 @@ def objective_bounds(net, candidates, p):
             latest = max(latest, trip.visits[-1].departure + p.shift_limit)
             earliest = min(earliest, trip.visits[0].arrival - p.shift_limit)
     module_bound += len(net.depots) * p.depot_initial
-    requests = [q for q in net.passengers if q.kind]
-    if requests:
-        last_pickup = max(q.latest for q in requests)
-        diameter = max((net.distance(a, b) for a in net.nodes for b in net.nodes), default=0) if len(net.nodes) < 100 else max((net.distance(a, b) for a in net.nodes for b in list(net.depots) + [s[0] for s in net.lines.values()]), default=0) * 2
-        road_duration = sum(t for _, t in net.edges.values())
-        latest = max(latest, last_pickup + (2 * len(requests) + 1) * (diameter / p.speed * 60 + road_duration + p.stop_time * max(map(len, net.lines.values())) + p.operation_time + p.max_coupling_wait))
     final_empty_bound = sum((t for _, t in net.edges.values())) + p.operation_time
     horizon = max(1, latest - earliest + final_empty_bound)
     speed = max([p.speed / 60] + [d / t for d, t in net.edges.values() if t > 0])

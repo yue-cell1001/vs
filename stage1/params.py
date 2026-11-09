@@ -13,12 +13,12 @@ class Params:
     mutation_step: float = 2
     seed: int = 2026
     capacity: int = 6
-    max_formation: int = 4
+    max_formation: int = 5
     purchase_cost: float = 50
     operating_cost: float = 0.3
     following_ratio: float = 0.8
     reference_load: float = 0.8
-    depot_initial: int = 5
+    depot_initial: int = 0
     depot_capacity: int = 20
     turnaround_time: float = 1.0
     stop_time: float = 20 / 60

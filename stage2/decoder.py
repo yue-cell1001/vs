@@ -62,6 +62,10 @@ class Decoder:
             self.optimizer.tradeoff_weights = tuple(self.tradeoff_weights)
             self.optimizer.deadline = getattr(self, 'deadline', None)
             solution = self.optimizer.solve(duties, self.trips, excursions, required, self.preference)
+            from .service_limits import completion_limits
+            solution.metadata['completion_limits'] = completion_limits(self.trips)
+            solution.metadata['max_drt_extra_ride_minutes'] = self.p.max_drt_detour
+            solution.metadata['return_policy'] = 'scheduled_first_independent_only_after_no_feasible_scheduled_insertion'
             solution.metadata['allocation_preference'] = self.preference
             solution.metadata['timetable'] = self.timetable
             solution.metadata['operations'] = [list(action) for action in sorted(operations)]

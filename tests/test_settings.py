@@ -20,10 +20,10 @@ class SettingsTests(unittest.TestCase):
     def test_main_parameters_and_confirmed_reference_load(self):
         p1, p2 = Stage1Params(), Params()
         for p in (p1, p2):
-            self.assertEqual((p.capacity, p.max_formation), (6, 4))
+            self.assertEqual((p.capacity, p.max_formation), (6, 5))
             self.assertEqual((p.start, p.end, p.min_headway, p.max_headway), (480, 600, 5, 15))
             self.assertEqual((p.purchase_cost, p.operating_cost, p.following_ratio), (50, .3, .8))
-            self.assertEqual((p.depot_initial, p.depot_capacity), (5, 20))
+            self.assertEqual((p.depot_initial, p.depot_capacity), (0, 20))
             self.assertAlmostEqual(p.stop_time, 20 / 60)
             self.assertAlmostEqual(p.operation_time, 30 / 60)
         self.assertEqual((p1.population, p1.generations), (64, 200))
