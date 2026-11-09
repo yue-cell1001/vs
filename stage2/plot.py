@@ -197,11 +197,6 @@ def draw_reserve_drt(solution, directory, dpi=200):
             paths.append([(leg.departure, y), (leg.arrival, y)])
             colors.append(palette.get(kind, '#888888'))
             rows.append([duty.vehicle, kind, leg.start, leg.end, leg.departure, leg.arrival, leg.distance])
-        for visit in duty.visits:
-            if visit.kind in ('pickup', 'dropoff', 'depot', 'join', 'stored_join'):
-                ax.scatter([visit.arrival], [y], marker='^' if visit.kind == 'pickup' else 'v' if visit.kind == 'dropoff' else '|', color='#333333', s=14)
-                if visit.kind in ('pickup', 'dropoff'):
-                    ax.annotate(str(visit.node), (visit.arrival, y), xytext=(0, 5), textcoords='offset points', fontsize=5)
     for move in solution.metadata.get('rebalance_moves', ()):
         if move['vehicle'] in positions:
             y = positions[move['vehicle']]
@@ -214,7 +209,7 @@ def draw_reserve_drt(solution, directory, dpi=200):
     ax.xaxis.set_major_formatter(FuncFormatter(lambda t, _: f'{int(round(t * 60)) // 3600:02}:{int(round(t * 60)) // 60 % 60:02}'))
     ax.set_xlabel('Time')
     ax.set_ylabel('Physical module')
-    ax.set_title('Warehouse DRT module schedule; triangles: pickup/dropoff node IDs')
+    ax.set_title('Warehouse DRT module schedule')
     ax.grid(axis='x', alpha=0.25)
     ax.legend(handles=[Line2D([0], [0], color=c, lw=3, label=k) for k, c in palette.items()], loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=4)
     fig.tight_layout()
